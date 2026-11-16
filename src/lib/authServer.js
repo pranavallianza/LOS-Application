@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://los-backend-dqay.onrender.com";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, "");
 export const AUTH_SESSION_COOKIE = "los-session";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 
@@ -37,6 +36,13 @@ export async function forwardAuthRequest(request, path, requireAccessToken = fal
     return NextResponse.json(
       { success: false, message: "Invalid authentication request" },
       { status: 400 },
+    );
+  }
+
+  if (!API_BASE_URL) {
+    return NextResponse.json(
+      { success: false, message: "NEXT_PUBLIC_API_URL is not configured." },
+      { status: 500 },
     );
   }
 
@@ -96,6 +102,11 @@ export async function clearAuthSession(request) {
 
   if (!accessToken) {
     response = NextResponse.json({ success: true });
+  } else if (!API_BASE_URL) {
+    response = NextResponse.json(
+      { success: false, message: "NEXT_PUBLIC_API_URL is not configured." },
+      { status: 500 },
+    );
   } else {
     let upstream;
     try {

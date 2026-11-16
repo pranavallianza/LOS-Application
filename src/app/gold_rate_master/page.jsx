@@ -1,9 +1,16 @@
 'use client';
 
+<<<<<<< HEAD
 import { useCallback, useEffect, useState } from 'react';
 import { CirclePlus, Eye, LoaderCircle, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import { deleteGoldRateMaster, getGoldRateMasters, saveGoldRateMaster, searchGoldProducts } from '../../services/goldRateMaster';
+=======
+import { useEffect, useState } from 'react';
+import { CirclePlus, Eye, Plus, Save, Search, Trash2, X } from 'lucide-react';
+import AppShell from '../../components/AppShell';
+import { getLoanProducts } from '../../services/loanProducts';
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
 
 const emptyRate = (id) => ({ id, purityCarat: '', netWeight: '', rate: '', marginPercent: '' });
 const initialForm = () => ({
@@ -19,11 +26,22 @@ function todayString() {
   return new Date(today.getTime() - offset * 60_000).toISOString().slice(0, 10);
 }
 
+<<<<<<< HEAD
 function validate(form, selectedProduct) {
+=======
+function validate(form, products) {
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
   const errors = {};
 
+<<<<<<< HEAD
   if (selectedProduct?.name !== form.productName.trim() || selectedProduct?.code !== form.productCode) {
     errors.productName = 'Select a product from the product list.';
+=======
+  if (!products.some((product) => product.code.toUpperCase() === productCode.toUpperCase())) {
+    errors.productCode = 'Select a product code from the backend list.';
+  } else if (!/^[A-Z0-9][A-Z0-9_-]{1,19}$/i.test(productCode)) {
+    errors.productCode = 'Use 2–20 letters, numbers, hyphens, or underscores.';
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
   }
   if (!form.effectiveDate) {
     errors.effectiveDate = 'Select an effective date.';
@@ -110,6 +128,27 @@ const styles = `
 .grm-field input{width:100%;height:40px;padding:0 10px;border:1px solid #b9cbca;border-radius:4px;background:#fbfdfc;color:#263d3f;font:400 13px Arial,sans-serif;outline:none}
 .grm-field input:focus,.grm-cell input:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a19}
 .grm-field input[aria-invalid=true],.grm-cell input[aria-invalid=true]{border-color:#b83b3b;background:#fffafa}
+.grm-product-control{display:flex;gap:8px;min-width:0}
+.grm-product-control input{min-width:0;flex:1;background:#f2f6f5;cursor:pointer}
+.grm-product-search{display:grid;place-items:center;flex:0 0 40px;height:40px;border:1px solid #b9cbca;border-radius:4px;background:#fff;color:#176e67}
+.grm-product-search:hover{border-color:#177e7a;background:#f2f8f6}
+.grm-picker-overlay{z-index:30}
+.grm-picker{width:min(680px,100%)}
+.grm-picker-content{display:flex;flex-direction:column;min-height:0;padding:18px 22px}
+.grm-picker-search{position:relative;margin-bottom:14px}
+.grm-picker-search svg{position:absolute;top:50%;left:12px;transform:translateY(-50%);color:#718486}
+.grm-picker-search input{box-sizing:border-box;width:100%;height:42px;padding:0 12px 0 38px;border:1px solid #b9cbca;border-radius:5px;color:#263d3f;font:400 13px Arial,sans-serif}
+.grm-picker-search input:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a19;outline:none}
+.grm-picker-results{max-height:min(420px,55vh);overflow:auto;border:1px solid #e1e9e7;border-radius:5px}
+.grm-picker-table{width:100%;border-collapse:collapse}
+.grm-picker-table th,.grm-picker-table td{padding:11px 14px;border-bottom:1px solid #edf1f0;text-align:left;color:#354d4f;font-size:12px}
+.grm-picker-table th{position:sticky;top:0;background:#f6f9f8;color:#607577;font-size:10px;text-transform:uppercase}
+.grm-picker-table tbody tr:last-child td{border-bottom:0}
+.grm-picker-table tbody tr:hover{background:#f5faf8}
+.grm-picker-code{color:#176e67!important;font-weight:700}
+.grm-picker-select{padding:6px 10px;border:1px solid #d0ddda;border-radius:4px;background:#fff;color:#176e67;font-size:11px;font-weight:700}
+.grm-picker-select:hover{border-color:#177e7a;background:#f2f8f6}
+.grm-picker-empty{padding:32px 16px!important;text-align:center!important;color:#718284!important}
 .grm-error{color:#b33737;font-size:10px;font-weight:500;line-height:1.4}
 .grm-table-wrap{max-width:100%;overflow-x:auto;border:1px solid #c1cdcb;border-radius:3px}
 .grm-table{width:100%;min-width:780px;border-collapse:collapse;table-layout:fixed}
@@ -136,7 +175,7 @@ const styles = `
 .grm-view-table th,.grm-view-table td{padding:12px;border-bottom:1px solid #e9efed;text-align:left;color:#354d4f;font-size:12px}
 .grm-view-table th{background:#f6f9f8;color:#607577;font-size:10px;text-transform:uppercase}
 .grm-dialog-footer{display:flex;justify-content:flex-end;gap:10px;padding:13px 20px;border-top:1px solid #e7eeec}
-@media(max-width:600px){.grm-heading{align-items:flex-start;flex-direction:column}.grm-create{width:100%}.grm-fields{grid-template-columns:1fr;gap:14px}.grm-form{padding:17px 14px}.grm-actions-footer{display:grid;grid-template-columns:1fr 1fr}.grm-btn{padding:0 10px}.grm-dialog-head{padding:15px}.grm-tier-view{padding:15px}}
+@media(max-width:600px){.grm-heading{align-items:flex-start;flex-direction:column}.grm-create{width:100%}.grm-fields{grid-template-columns:1fr;gap:14px}.grm-form{padding:17px 14px}.grm-actions-footer{display:grid;grid-template-columns:1fr 1fr}.grm-btn{padding:0 10px}.grm-dialog-head{padding:15px}.grm-tier-view{padding:15px}.grm-picker-content{padding:14px}.grm-picker-table th,.grm-picker-table td{padding:10px 9px}}
 `;
 
 export default function GoldRateMasterPage() {
@@ -152,7 +191,15 @@ export default function GoldRateMasterPage() {
   const [mastersError, setMastersError] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+<<<<<<< HEAD
   const [saving, setSaving] = useState(false);
+=======
+  const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError, setProductsError] = useState('');
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
 
   const loadMasters = useCallback(async () => {
     setLoading(true);
@@ -168,6 +215,7 @@ export default function GoldRateMasterPage() {
   }, []);
 
   useEffect(() => {
+<<<<<<< HEAD
     loadMasters();
   }, [loadMasters]);
 
@@ -191,10 +239,25 @@ export default function GoldRateMasterPage() {
         if (!controller.signal.aborted) {
           console.error('Unable to search products for gold rate master.', error);
           setProductSearchError('Unable to search products. Please try again.');
+=======
+    const controller = new AbortController();
+
+    async function loadProducts() {
+      try {
+        const authData = JSON.parse(window.localStorage.getItem('authData') || '{}');
+        const rows = await getLoanProducts(controller.signal, authData.accessToken);
+        if (!controller.signal.aborted) {
+          setProducts(rows.filter((product) => product.code && product.name));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setProductsError(error instanceof Error ? error.message : 'Unable to load products from the backend.');
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
         }
       } finally {
         if (!controller.signal.aborted) setProductsLoading(false);
       }
+<<<<<<< HEAD
     }, 300);
 
     return () => {
@@ -202,6 +265,13 @@ export default function GoldRateMasterPage() {
       controller.abort();
     };
   }, [dialog?.type, form.productName, selectedProduct]);
+=======
+    }
+
+    loadProducts();
+    return () => controller.abort();
+  }, []);
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
 
   function openCreate() {
     setForm(initialForm());
@@ -231,7 +301,12 @@ export default function GoldRateMasterPage() {
     setSelectedProduct(null);
     setProducts([]);
     setErrors({});
+<<<<<<< HEAD
     setMessage(null);
+=======
+    setProductPickerOpen(false);
+    setProductSearch('');
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
   }
 
   function updateProductName(value) {
@@ -255,6 +330,29 @@ export default function GoldRateMasterPage() {
     setMessage(null);
   }
 
+  function openProductPicker() {
+    setProductSearch('');
+    setProductPickerOpen(true);
+  }
+
+  function selectProduct(product) {
+    updateHeader('productCode', product.code);
+    setProductPickerOpen(false);
+    setProductSearch('');
+  }
+
+  const productSearchRows = products.map((product) => ({
+    ...product,
+    effectiveDates: masters
+      .filter((master) => master.productCode.toLowerCase() === product.code.toLowerCase())
+      .map((master) => master.effectiveDate)
+      .filter(Boolean)
+      .sort((left, right) => right.localeCompare(left))
+  }));
+  const filteredProducts = productSearchRows.filter((product) => (
+    `${product.code} ${product.name} ${product.effectiveDates.join(' ')}`.toLowerCase().includes(productSearch.trim().toLowerCase())
+  ));
+
   function updateRate(id, field, value) {
     setForm((current) => ({
       ...current,
@@ -277,7 +375,11 @@ export default function GoldRateMasterPage() {
 
   async function submit(event) {
     event.preventDefault();
+<<<<<<< HEAD
     const nextErrors = validate(form, selectedProduct);
+=======
+    const nextErrors = validate(form, products);
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
     setErrors(nextErrors);
     const firstError = Object.keys(nextErrors)[0];
     if (firstError) {
@@ -456,6 +558,7 @@ export default function GoldRateMasterPage() {
             {message?.type === 'error' && <div className="grm-message error" role="alert">{message.text}</div>}
             <form className="grm-form" onSubmit={submit} noValidate>
               <div className="grm-fields">
+<<<<<<< HEAD
                 <label className="grm-field" htmlFor="gr-productName">
                   Product Name *
                   <div className="grm-product-search">
@@ -489,6 +592,29 @@ export default function GoldRateMasterPage() {
                   Product Code *
                   <input id="gr-productCode" value={form.productCode} readOnly aria-readonly="true" placeholder="Selected product code" />
                 </label>
+=======
+                <div className="grm-field">
+                  <label htmlFor="gr-productCode">Product Code *</label>
+                  <div className="grm-product-control">
+                    <input
+                      id="gr-productCode"
+                      value={form.productCode}
+                      placeholder="Search and select a product"
+                      readOnly
+                      aria-readonly="true"
+                      aria-haspopup="dialog"
+                      aria-required="true"
+                      aria-invalid={Boolean(errors.productCode)}
+                      aria-describedby={errors.productCode ? 'gr-productCode-error' : undefined}
+                      onClick={openProductPicker}
+                    />
+                    <button className="grm-product-search" type="button" onClick={openProductPicker} aria-label="Search products" title="Search products">
+                      <Search size={17} />
+                    </button>
+                  </div>
+                  {errors.productCode && <small className="grm-error" id="gr-productCode-error">{errors.productCode}</small>}
+                </div>
+>>>>>>> 92fddbb684d1a0e6e1863601ba91c4f0ab1e717a
                 <label className="grm-field" htmlFor="gr-effectiveDate">
                   Effective Date *
                   <input
@@ -560,6 +686,43 @@ export default function GoldRateMasterPage() {
                 <button className="grm-btn grm-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="grm-spin" size={15} /> : <Save size={15} />}{saving ? 'Saving…' : dialog.master ? 'Save changes' : 'Create master'}</button>
               </div>
             </form>
+          </section>
+        </div>
+      )}
+
+      {productPickerOpen && dialog?.type === 'form' && (
+        <div className="grm-overlay grm-picker-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setProductPickerOpen(false); }}>
+          <section className="grm-dialog grm-picker" role="dialog" aria-modal="true" aria-labelledby="grm-picker-title" onKeyDown={(event) => { if (event.key === 'Escape') setProductPickerOpen(false); }}>
+            <header className="grm-dialog-head">
+              <div><h2 id="grm-picker-title">Select a product</h2><p>Search the product catalog by product code or product name.</p></div>
+              <button className="grm-close" type="button" onClick={() => setProductPickerOpen(false)} aria-label="Close product search"><X size={18} /></button>
+            </header>
+            <div className="grm-picker-content">
+              <label className="grm-picker-search" htmlFor="gr-product-search">
+                <Search size={17} aria-hidden="true" />
+                <input id="gr-product-search" type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by code or product name" autoComplete="off" autoFocus />
+              </label>
+              <div className="grm-picker-results">
+                <table className="grm-picker-table">
+                  <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date(s)</th><th scope="col"><span className="sr-only">Action</span></th></tr></thead>
+                  <tbody>
+                    {productsLoading
+                      ? <tr><td className="grm-picker-empty" colSpan="4">Loading products from the backend...</td></tr>
+                      : filteredProducts.map((product) => (
+                        <tr key={String(product.id)}>
+                          <td className="grm-picker-code">{product.code}</td>
+                          <td>{product.name}</td>
+                          <td>{product.effectiveDates.length ? product.effectiveDates.join(' · ') : 'No saved rates'}</td>
+                          <td><button className="grm-picker-select" type="button" onClick={() => selectProduct(product)}>Select</button></td>
+                        </tr>
+                      ))}
+                    {!productsLoading && filteredProducts.length === 0 && (
+                      <tr><td className="grm-picker-empty" colSpan="4">{productsError || (products.length ? 'No products match your search.' : 'No products are available in the backend catalog.')}</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         </div>
       )}

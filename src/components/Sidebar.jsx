@@ -44,7 +44,11 @@ const NAV = [
         href: "/customer_management",
       },
       { label: "Loan application", icon: FilePlus2, href: "/loan_application" },
-      { label: "Gold Loan Application", icon: Coins, href: "/gold_loan_application" },
+      {
+        label: "Gold Loan Application",
+        icon: Coins,
+        href: "/gold_loan_application",
+      },
     ],
   },
   {
@@ -105,9 +109,14 @@ const NAV = [
       },
       { label: "Gold rate master", icon: Coins, href: "/gold_rate_master" },
       {
-        label: "Bank branch master",
+        label: "Bank master",
         icon: Building2,
-        href: "/master_creation",
+        href: "/bank_master",
+      },
+      {
+        label: "Bank branch",
+        icon: Building2,
+        href: "/bank_branch",
       },
     ],
   },
@@ -140,6 +149,25 @@ const NAV = [
 function getVisibleRoute(role, item) {
   const permission = getRoutePermission(item.href || item.permissionHref);
   return !permission || hasRolePermission(role, ...permission);
+}
+
+export function getSidebarSearchItems(role) {
+  return NAV.flatMap((item) => {
+    if (item.type === 'link') {
+      return getVisibleRoute(role, item)
+        ? [{ label: item.label, href: item.href, section: '', icon: item.icon }]
+        : [];
+    }
+
+    return item.children
+      .filter((child) => child.href && !child.disabled && getVisibleRoute(role, child))
+      .map((child) => ({
+        label: child.label,
+        href: child.href,
+        section: item.label,
+        icon: child.icon,
+      }));
+  });
 }
 
 function getItemPath(item) {
