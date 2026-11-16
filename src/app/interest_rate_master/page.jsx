@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CirclePlus, Eye, LoaderCircle, Plus, Save, Trash2, X } from 'lucide-react';
+import { Eye, LoaderCircle, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import { saveInterestRateMaster } from '../../services/interestRateMaster';
 import { getLoanProducts } from '../../services/loanProducts';
@@ -14,6 +14,10 @@ const getToday = () => {
 const emptyBand = (id) => ({ id, upToAmount: '', upToMonths: '', normalInterest: '', penalRate: '', adhocRate: '' });
 const initialForm = () => ({ productCode: '', productName: '', effectiveDate: getToday(), bands: [emptyBand(1)] });
 const STORAGE_KEY = 'los_interest_rate_master_records';
+const sampleProductRows = [
+  { code: 'DEMO-PL01', name: 'Sample Personal Loan', effectiveDates: ['2026-12-01', '2027-01-01'] },
+  { code: 'DEMO-BL02', name: 'Sample Business Loan', effectiveDates: ['2027-01-15'] }
+];
 
 function formatUpperAmount(amount) {
   if (amount === undefined || amount === null || amount === '') return '—';
@@ -39,9 +43,9 @@ function persistMasters(masters) {
   return true;
 }
 
-function validate(form) {
+function validate(form, products) {
   const errors = {};
-  if (!/^[A-Z0-9][A-Z0-9_-]{1,19}$/i.test(form.productCode.trim())) errors.productCode = 'Use 2–20 letters, numbers, hyphens, or underscores.';
+  if (!products.some((product) => product.code === form.productCode)) errors.productCode = 'Select a product code from the backend list.';
   if (form.productName.trim().length < 2 || form.productName.trim().length > 100) errors.productName = 'Enter a product name between 2 and 100 characters.';
   if (!form.effectiveDate) errors.effectiveDate = 'Select an effective date.';
   else if (form.effectiveDate < getToday()) errors.effectiveDate = 'Effective date cannot be in the past.';
@@ -95,6 +99,8 @@ export default function InterestRateMasterPage() {
   const [dialog, setDialog] = useState(null);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
 
   useEffect(() => setMasters(readMasters()), []);
 
@@ -123,29 +129,51 @@ export default function InterestRateMasterPage() {
 
   function storeMasters(nextMasters) {
     setMasters(nextMasters);
-    if (!persistMasters(nextMasters)) setMessage({ type: 'info', text: 'Changes are available for this session but could not be saved to browser storage.' });
+    return persistMasters(nextMasters);
   }
 
   function openCreate() {
     setForm(initialForm());
     setErrors({});
     setMessage(null);
+    setProductSearch('');
+    setProductPickerOpen(false);
     setDialog({ type: 'form' });
   }
 
   function updateHeader(field, value) {
-    const normalizedValue = field === 'productCode' ? value.toUpperCase() : value;
     const selectedProduct = field === 'productCode'
-      ? products.find((product) => product.code.toUpperCase() === value.trim().toUpperCase())
+      ? products.find((product) => product.code === value)
       : null;
     setForm((current) => ({
       ...current,
-      [field]: normalizedValue,
-      ...(selectedProduct ? { productName: selectedProduct.name } : {})
+      [field]: value,
+      ...(field === 'productCode' ? { productName: selectedProduct?.name || '' } : {})
     }));
-    setErrors((current) => ({ ...current, [field]: '', ...(selectedProduct ? { productName: '' } : {}) }));
+    setErrors((current) => ({ ...current, [field]: '', ...(field === 'productCode' ? { productName: '' } : {}) }));
     setMessage(null);
   }
+
+  function selectProduct(product) {
+    updateHeader('productCode', product.code);
+    setProductPickerOpen(false);
+    setProductSearch('');
+  }
+
+  const productSearchRows = products.map((product) => ({
+    ...product,
+    effectiveDates: masters
+      .filter((master) => master.productCode.toLowerCase() === product.code.toLowerCase())
+      .map((master) => master.effectiveDate)
+      .filter(Boolean)
+      .sort((left, right) => right.localeCompare(left))
+  }));
+  const filteredProducts = productSearchRows.filter((product) => (
+    `${product.code} ${product.name} ${product.effectiveDates.join(' ')}`.toLowerCase().includes(productSearch.trim().toLowerCase())
+  ));
+  const filteredSampleProducts = sampleProductRows.filter((product) => (
+    `${product.code} ${product.name} ${product.effectiveDates.join(' ')}`.toLowerCase().includes(productSearch.trim().toLowerCase())
+  ));
 
   function updateBand(id, field, value) {
     setForm((current) => ({ ...current, bands: current.bands.map((band) => band.id === id ? { ...band, [field]: value } : band) }));
@@ -155,7 +183,7 @@ export default function InterestRateMasterPage() {
 
   async function submit(event) {
     event.preventDefault();
-    const nextErrors = validate(form);
+    const nextErrors = validate(form, products);
     setErrors(nextErrors);
     const invalid = Object.keys(nextErrors)[0];
     if (invalid) {
@@ -163,14 +191,19 @@ export default function InterestRateMasterPage() {
       return;
     }
 
-    if (masters.some((master) => master.productCode.toLowerCase() === form.productCode.trim().toLowerCase())) {
-      setErrors((current) => ({ ...current, productCode: 'An interest rate master with this product code already exists.' }));
-      document.getElementById('ir-productCode')?.focus();
+    if (masters.some((master) => (
+      master.productCode.toLowerCase() === form.productCode.trim().toLowerCase()
+      && master.effectiveDate === form.effectiveDate
+      && master.id !== dialog.master?.id
+    ))) {
+      setErrors((current) => ({ ...current, effectiveDate: 'A master already exists for this product and effective date. Choose a different date.' }));
+      document.getElementById('ir-effectiveDate')?.focus();
       return;
     }
 
+    const existingMaster = dialog.master;
     const master = {
-      id: globalThis.crypto?.randomUUID?.() ?? `rate-master-${Date.now()}`,
+      id: existingMaster?.id || globalThis.crypto?.randomUUID?.() || `rate-master-${Date.now()}`,
       productCode: form.productCode.trim(),
       productName: form.productName.trim(),
       effectiveDate: form.effectiveDate,
@@ -187,12 +220,22 @@ export default function InterestRateMasterPage() {
           penal_rate: band.penalRate === '' ? null : Number(band.penalRate), adhoc_rate: band.adhocRate === '' ? null : Number(band.adhocRate)
         })).sort((left, right) => left.up_to_amount - right.up_to_amount || left.up_to_months - right.up_to_months)
       };
-      const result = await saveInterestRateMaster(payload);
-      console.log('Interest Rate Master API response:', result);
-      console.log('payload sent to API:', payload);
-      storeMasters([master, ...masters]);
+      const result = existingMaster ? null : await saveInterestRateMaster(payload);
+      const nextMasters = existingMaster
+        ? masters.map((record) => record.id === existingMaster.id ? master : record)
+        : [master, ...masters];
+      const stored = storeMasters(nextMasters);
       setDialog(null);
-      setMessage({ type: result.configured ? 'success' : 'info', text: result.configured ? result.result?.message || 'Interest rate master saved successfully.' : 'Interest rate master saved in this browser. The API endpoint is not configured.' });
+      setMessage({
+        type: stored && (!result || result.configured) ? 'success' : 'info',
+        text: !stored
+          ? 'Changes are available for this session but could not be saved to browser storage.'
+          : existingMaster
+            ? 'Interest rate master updated in the list.'
+            : result.configured
+              ? result.result?.message || 'Interest rate master saved successfully.'
+              : 'Interest rate master saved in this browser. The API endpoint is not configured.'
+      });
     } catch (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to save interest rates.' });
     } finally {
@@ -207,15 +250,25 @@ export default function InterestRateMasterPage() {
     setDialog(null);
   }
 
-  function addBand() {
-    const id = Math.max(0, ...form.bands.map((band) => band.id)) + 1;
-    setForm((current) => ({ ...current, bands: [...current.bands, emptyBand(id)] }));
+  function openEdit(master) {
+    setForm({
+      productCode: master.productCode,
+      productName: master.productName,
+      effectiveDate: master.effectiveDate,
+      bands: master.bands.map((band) => ({ ...band }))
+    });
+    setErrors({});
+    setMessage(null);
+    setDialog({ type: 'form', master });
   }
 
-  function removeBand(id) {
-    setForm((current) => ({ ...current, bands: current.bands.filter((band) => band.id !== id) }));
-    setErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`band-${id}-`))));
-    setMessage(null);
+  function deleteMaster(master) {
+    const stored = storeMasters(masters.filter((record) => record.id !== master.id));
+    setDialog(null);
+    setMessage({
+      type: stored ? 'success' : 'info',
+      text: stored ? 'Interest rate master deleted from the list.' : 'The record was removed for this session but could not be saved to browser storage.'
+    });
   }
 
   return (
@@ -223,16 +276,43 @@ export default function InterestRateMasterPage() {
       <style>{styles}</style>
       <style>{`
         .irm-create:disabled{opacity:.65;cursor:not-allowed}
-        .irm-form .ir-top-fields{grid-template-columns:minmax(180px,.65fr) minmax(260px,1.5fr) minmax(180px,.7fr)}
-        .irm-form .ir-top-fields .ir-field:nth-child(2){grid-column:2/4}
-        .irm-form .ir-top-fields .ir-field:nth-child(3){grid-column:1}
+        .irm-form .ir-top-fields{grid-template-columns:repeat(3,minmax(0,1fr))}
+        .irm-form .ir-field select{box-sizing:border-box;width:100%;height:40px;padding:0 10px;border:1px solid #b9cbca;border-radius:4px;background:#fbfdfc;color:#263d3f;font:400 13px Arial,sans-serif}
+        .irm-form .ir-field select:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a19;outline:none}
+        .irm-form .ir-field input[readonly]{background:#f2f6f5;color:#52686a;cursor:default}
+        .irm-product-control{display:flex;gap:8px;min-width:0}
+        .irm-product-control input{min-width:0;flex:1}
+        .irm-product-search{display:grid;place-items:center;flex:0 0 40px;height:40px;border:1px solid #b9cbca;border-radius:4px;background:#fff;color:#176e67}
+        .irm-product-search:hover:not(:disabled){border-color:#177e7a;background:#f2f8f6}
+        .irm-product-search:disabled{opacity:.55;cursor:not-allowed}
+        .irm-picker-overlay{z-index:30}
+        .irm-picker{width:min(680px,100%)}
+        .irm-picker-content{display:flex;flex-direction:column;min-height:0;padding:18px 22px}
+        .irm-picker-search{position:relative;margin-bottom:14px}
+        .irm-picker-search svg{position:absolute;top:50%;left:12px;transform:translateY(-50%);color:#718486}
+        .irm-picker-search input{box-sizing:border-box;width:100%;height:42px;padding:0 12px 0 38px;border:1px solid #b9cbca;border-radius:5px;color:#263d3f;font:400 13px Arial,sans-serif}
+        .irm-picker-search input:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a19;outline:none}
+        .irm-picker-results{max-height:min(420px,55vh);overflow:auto;border:1px solid #e1e9e7;border-radius:5px}
+        .irm-picker-table{width:100%;border-collapse:collapse}
+        .irm-picker-table th,.irm-picker-table td{padding:11px 14px;border-bottom:1px solid #edf1f0;text-align:left;color:#354d4f;font-size:12px}
+        .irm-picker-table th{position:sticky;top:0;background:#f6f9f8;color:#607577;font-size:10px;text-transform:uppercase}
+        .irm-picker-table tbody tr:last-child td{border-bottom:0}
+        .irm-picker-table tbody tr:hover{background:#f5faf8}
+        .irm-picker-code{color:#176e67!important;font-weight:700}
+        .irm-picker-select{padding:6px 10px;border:1px solid #d0ddda;border-radius:4px;background:#fff;color:#176e67;font-size:11px;font-weight:700}
+        .irm-picker-select:hover{border-color:#177e7a;background:#f2f8f6}
+        .irm-picker-select:disabled{border-color:#e1e9e7;background:#f6f9f8;color:#849294;cursor:not-allowed}
+        .irm-picker-samples td{background:#fbfcfc;color:#849294}
+        .irm-picker-sample-note{margin:0 0 10px;color:#718486;font-size:11px;line-height:1.5}
+        .irm-picker-empty{padding:32px 16px!important;text-align:center!important;color:#718284!important}
+        @media(max-width:520px){.irm-picker-content{padding:14px}.irm-picker-table th,.irm-picker-table td{padding:10px 9px}}
         .irm-form .ir-table{min-width:900px}
         .irm-form .ir-table th:last-child,.irm-form .ir-table td:last-child{width:auto;border-right:0}
         .ir-tier-index{display:flex;align-items:center;justify-content:center;gap:4px}
         .ir-remove:disabled{opacity:.35;cursor:not-allowed}
-        .irm-tier-summary{max-width:360px;line-height:1.55}
-        @media(max-width:850px){.irm-form .ir-top-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.irm-form .ir-top-fields .ir-field:nth-child(2){grid-column:1/-1;grid-row:2}.irm-form .ir-top-fields .ir-field:nth-child(3){grid-column:1;grid-row:3}}
-        @media(max-width:520px){.irm-form .ir-top-fields{grid-template-columns:1fr}.irm-form .ir-top-fields .ir-field:nth-child(n){grid-column:1;grid-row:auto}}
+        .irm-list{min-width:1050px}
+        @media(max-width:850px){.irm-form .ir-top-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media(max-width:520px){.irm-form .ir-top-fields{grid-template-columns:1fr}}
       `}</style>
       <main className="irm-wrap">
         <div className="irm-heading">
@@ -255,20 +335,26 @@ export default function InterestRateMasterPage() {
           <div className="irm-directory-head"><h2 id="irm-directory-title">Interest rate masters</h2><span className="irm-count">{masters.length} {masters.length === 1 ? 'master' : 'masters'}</span></div>
           <div className="irm-list-wrap">
             <table className="irm-list">
-              <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date</th><th scope="col">Amount / tenure tiers</th><th scope="col">Actions</th></tr></thead>
+              <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date</th><th scope="col">Up to amount</th><th scope="col">Up to months</th><th scope="col">Normal interest</th><th scope="col">Penal rate</th><th scope="col">Adhoc rate</th><th scope="col">Actions</th></tr></thead>
               <tbody>
                 {masters.map((master) => (
                   <tr key={master.id}>
                     <td className="irm-code">{master.productCode}</td>
                     <td>{master.productName}</td>
                     <td>{master.effectiveDate}</td>
-                    <td className="irm-tier-summary">{master.bands.map((band) => `${formatUpperAmount(band.upToAmount)} / ${band.upToMonths || '—'} mo`).join(' · ')}</td>
+                    <td>{master.bands.map((band) => formatUpperAmount(band.upToAmount)).join(' · ')}</td>
+                    <td>{master.bands.map((band) => `${band.upToMonths || '—'} mo`).join(' · ')}</td>
+                    <td>{master.bands.map((band) => `${band.normalInterest}%`).join(' · ')}</td>
+                    <td>{master.bands.map((band) => band.penalRate !== '' && band.penalRate != null ? `${band.penalRate}%` : '—').join(' · ')}</td>
+                    <td>{master.bands.map((band) => band.adhocRate !== '' && band.adhocRate != null ? `${band.adhocRate}%` : '—').join(' · ')}</td>
                     <td><div className="irm-actions">
                       <button className="irm-icon" type="button" onClick={() => setDialog({ type: 'view', master })} aria-label={`View ${master.productName}`} title="View"><Eye size={16} /></button>
+                      <button className="irm-icon" type="button" onClick={() => openEdit(master)} aria-label={`Edit ${master.productName}`} title="Edit"><Pencil size={16} /></button>
+                      <button className="irm-icon danger" type="button" onClick={() => setDialog({ type: 'delete', master })} aria-label={`Delete ${master.productName}`} title="Delete"><Trash2 size={16} /></button>
                     </div></td>
                   </tr>
                 ))}
-                {masters.length === 0 && <tr><td className="irm-empty" colSpan="5"><strong>No interest rate masters yet</strong><span>Create a master to manage product rates and tenure tiers.</span></td></tr>}
+                {masters.length === 0 && <tr><td className="irm-empty" colSpan="9"><strong>No interest rate masters yet</strong><span>Create a master to manage product rates and tenure tiers.</span></td></tr>}
               </tbody>
             </table>
           </div>
@@ -278,19 +364,23 @@ export default function InterestRateMasterPage() {
       {dialog?.type === 'form' && (
         <div className="irm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) reset(); }}>
           <section className="irm-dialog" role="dialog" aria-modal="true" aria-labelledby="irm-form-title">
-            <header className="irm-dialog-head"><div><h2 id="irm-form-title">Create interest rate master</h2><p>Enter product details, set the effective date, and define amount and tenure tiers.</p></div><button className="irm-close" type="button" onClick={reset} disabled={saving} aria-label="Close form"><X size={18} /></button></header>
+            <header className="irm-dialog-head"><div><h2 id="irm-form-title">{dialog.master ? 'Edit interest rate master' : 'Create interest rate master'}</h2><p>Choose a backend product, set the effective date, and define its rate details.</p></div><button className="irm-close" type="button" onClick={reset} disabled={saving} aria-label="Close form"><X size={18} /></button></header>
             {message?.type === 'error' && <div className="irm-message error" role="alert">{message.text}</div>}
             <form className="ir-form irm-form" onSubmit={submit} noValidate>
               <div className="ir-top-fields">
-                <label className="ir-field" htmlFor="ir-productCode">
-                  Product Code *
-                  <input id="ir-productCode" value={form.productCode} onChange={(event) => updateHeader('productCode', event.target.value)} list="ir-product-suggestions" maxLength="20" autoComplete="off" aria-required="true" aria-invalid={Boolean(errors.productCode)} aria-describedby={errors.productCode ? 'ir-productCode-error' : undefined} />
-                  <datalist id="ir-product-suggestions">{products.map((product) => <option key={String(product.id)} value={product.code}>{product.name}</option>)}</datalist>
+                <div className="ir-field">
+                  <label htmlFor="ir-productCode">Product Code *</label>
+                  <div className="irm-product-control">
+                    <input id="ir-productCode" value={form.productCode} placeholder="Search and select a product" readOnly aria-readonly="true" aria-haspopup="dialog" aria-required="true" aria-invalid={Boolean(errors.productCode)} aria-describedby={errors.productCode ? 'ir-productCode-error' : undefined} onClick={() => { setProductSearch(''); setProductPickerOpen(true); }} />
+                    <button className="irm-product-search" type="button" aria-label="Search products" title="Search products" onClick={() => { setProductSearch(''); setProductPickerOpen(true); }}>
+                      <Search size={17} />
+                    </button>
+                  </div>
                   {errors.productCode && <small className="ir-error" id="ir-productCode-error">{errors.productCode}</small>}
-                </label>
+                </div>
                 <label className="ir-field" htmlFor="ir-productName">
                   Product Name *
-                  <input id="ir-productName" value={form.productName} onChange={(event) => updateHeader('productName', event.target.value)} maxLength="100" autoComplete="off" aria-required="true" aria-invalid={Boolean(errors.productName)} aria-describedby={errors.productName ? 'ir-productName-error' : undefined} />
+                  <input id="ir-productName" value={form.productName} readOnly aria-readonly="true" aria-required="true" aria-invalid={Boolean(errors.productName)} aria-describedby={errors.productName ? 'ir-productName-error' : undefined} />
                   {errors.productName && <small className="ir-error" id="ir-productName-error">{errors.productName}</small>}
                 </label>
                 <label className="ir-field" htmlFor="ir-effectiveDate">
@@ -305,7 +395,7 @@ export default function InterestRateMasterPage() {
                   <tbody>
                     {form.bands.map((band, index) => (
                       <tr key={band.id}>
-                        <td><div className="ir-tier-index"><span>{index + 1}</span><button className="ir-remove" type="button" onClick={() => removeBand(band.id)} disabled={form.bands.length === 1} aria-label={`Remove rate tier ${index + 1}`} title="Remove tier"><Trash2 size={14} /></button></div></td>
+                        <td>{index + 1}</td>
                         {[
                           ['upToAmount', 'Amount upper limit in rupees'], ['upToMonths', 'Tenure upper limit in months'], ['normalInterest', 'Normal interest rate'], ['penalRate', 'Penal rate'], ['adhocRate', 'Adhoc rate']
                         ].map(([field, label]) => {
@@ -324,8 +414,8 @@ export default function InterestRateMasterPage() {
                 </table>
               </div>
               {errors.bands && <p className="ir-error" role="alert">{errors.bands}</p>}
-              <div className="ir-tools"><button className="ir-add" type="button" onClick={addBand}><CirclePlus size={15} /> Add rate tier</button><span className="ir-error">Enter increasing amount and tenure limits for each tier.</span></div>
-              <div className="ir-actions"><button className="ir-btn" type="button" onClick={reset} disabled={saving}>Cancel</button><button className="ir-btn ir-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="ir-spin" size={15} /> : <Save size={15} />}{saving ? 'Saving...' : 'Create master'}</button></div>
+              <div className="ir-tools"><span className="ir-error">One rate tier is allowed for each product.</span></div>
+              <div className="ir-actions"><button className="ir-btn" type="button" onClick={reset} disabled={saving}>Cancel</button><button className="ir-btn ir-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="ir-spin" size={15} /> : <Save size={15} />}{saving ? 'Saving...' : dialog.master ? 'Update master' : 'Create master'}</button></div>
             </form>
           </section>
         </div>
@@ -337,6 +427,61 @@ export default function InterestRateMasterPage() {
             <header className="irm-dialog-head"><div><h2 id="irm-view-title">{dialog.master.productName}</h2><p>{dialog.master.productCode} · Effective {dialog.master.effectiveDate}</p></div><button className="irm-close" type="button" onClick={() => setDialog(null)} aria-label="Close details"><X size={18} /></button></header>
             <div className="irm-tier-view"><h3>Rate tiers</h3><table className="irm-tier-table"><thead><tr><th>Sr.</th><th>Up to amount</th><th>Up to months</th><th>Normal interest</th><th>Penal rate</th><th>Adhoc rate</th></tr></thead><tbody>{dialog.master.bands.map((band, index) => <tr key={band.id}><td>{index + 1}</td><td>{formatUpperAmount(band.upToAmount)}</td><td>{band.upToMonths}</td><td>{band.normalInterest}%</td><td>{band.penalRate !== '' && band.penalRate != null ? `${band.penalRate}%` : '—'}</td><td>{band.adhocRate !== '' && band.adhocRate != null ? `${band.adhocRate}%` : '—'}</td></tr>)}</tbody></table></div>
             <footer className="irm-dialog-footer"><button className="ir-btn" type="button" onClick={() => setDialog(null)}>Close</button></footer>
+          </section>
+        </div>
+      )}
+      {productPickerOpen && dialog?.type === 'form' && (
+        <div className="irm-overlay irm-picker-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setProductPickerOpen(false); }}>
+          <section className="irm-dialog irm-picker" role="dialog" aria-modal="true" aria-labelledby="irm-picker-title" onKeyDown={(event) => { if (event.key === 'Escape') setProductPickerOpen(false); }}>
+            <header className="irm-dialog-head">
+              <div><h2 id="irm-picker-title">Select a product</h2><p>Search the product catalog by product code or product name.</p></div>
+              <button className="irm-close" type="button" onClick={() => setProductPickerOpen(false)} aria-label="Close product search"><X size={18} /></button>
+            </header>
+            <div className="irm-picker-content">
+              <label className="irm-picker-search" htmlFor="irm-product-search">
+                <Search size={17} aria-hidden="true" />
+                <input id="irm-product-search" type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search by code or product name" autoComplete="off" autoFocus />
+              </label>
+              <div className="irm-picker-results">
+                <table className="irm-picker-table">
+                  <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date(s)</th><th scope="col"><span className="sr-only">Action</span></th></tr></thead>
+                  <tbody>
+                    {productsLoading
+                      ? <tr><td className="irm-picker-empty" colSpan="4">Loading products from the backend...</td></tr>
+                      : filteredProducts.map((product) => (
+                        <tr key={String(product.id)}>
+                          <td className="irm-picker-code">{product.code}</td>
+                          <td>{product.name}</td>
+                          <td>{product.effectiveDates.length ? product.effectiveDates.join(' · ') : 'No saved rates'}</td>
+                          <td><button className="irm-picker-select" type="button" onClick={() => selectProduct(product)}>Select</button></td>
+                        </tr>
+                      ))}
+                    {!productsLoading && filteredProducts.length === 0 && (
+                      products.length
+                        ? <tr><td className="irm-picker-empty" colSpan="4">No products match your search.</td></tr>
+                        : filteredSampleProducts.map((product) => (
+                          <tr className="irm-picker-samples" key={product.code}>
+                            <td>{product.code}</td>
+                            <td>{product.name}</td>
+                            <td>{product.effectiveDates.join(' · ')}</td>
+                            <td><button className="irm-picker-select" type="button" disabled title="Sample records cannot be selected">Sample</button></td>
+                          </tr>
+                        ))
+                    )}
+                    {!productsLoading && products.length === 0 && <tr><td className="irm-picker-empty" colSpan="4">{filteredSampleProducts.length ? 'Sample preview only — connect the product catalog to select a real product.' : 'No products match your search.'}</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+      {dialog?.type === 'delete' && (
+        <div className="irm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
+          <section className="irm-dialog narrow" role="dialog" aria-modal="true" aria-labelledby="irm-delete-title">
+            <header className="irm-dialog-head"><div><h2 id="irm-delete-title">Delete interest rate master?</h2><p>{dialog.master.productCode} · {dialog.master.productName}</p></div><button className="irm-close" type="button" onClick={() => setDialog(null)} aria-label="Close delete confirmation"><X size={18} /></button></header>
+            <div className="irm-tier-view"><p style={{ margin: 0 }}>This removes the master from the saved list in this browser.</p></div>
+            <footer className="irm-dialog-footer"><button className="ir-btn" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="ir-btn ir-submit" type="button" onClick={() => deleteMaster(dialog.master)}>Delete</button></footer>
           </section>
         </div>
       )}
