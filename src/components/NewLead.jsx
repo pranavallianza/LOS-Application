@@ -524,10 +524,11 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-step-panel .lead-otp-field .lead-field input{width:160px;max-width:100%;background:#fff}
 @media(max-width:900px){.lead-full-page .loan-application-card.lead-onboarding-card{padding:20px 52px 22px}.lead-full-page .lead-step-panel{padding:0 6px}}
 @media(max-width:560px){.lead-full-page{padding-left:24px;padding-right:24px}.lead-full-page .loan-application-card.lead-onboarding-card{padding:18px 36px 20px}.lead-full-page .lead-step-panel{padding:0}.lead-full-page .lead-personal-grid,.lead-full-page .lead-income-grid,.lead-full-page .lead-referral-grid,.lead-full-page .lead-address-row{row-gap:16px;column-gap:14px}.lead-full-page .lead-personal-demographics{gap:16px}.lead-full-page .lead-personal-actions{grid-column:1/-1;grid-row:auto}.lead-full-page .lead-step-panel .lead-otp-field .lead-field input{width:100%}}
-.lead-full-page{padding:24px clamp(24px,8vw,104px) 36px;background:#f2f7f6}
-.lead-full-page>.loan-onboarding-heading,.lead-full-page .lead-page-content{max-width:1200px}
+.lead-full-page{display:flex;width:100%;box-sizing:border-box;flex-direction:column;align-items:center;padding:24px clamp(24px,8vw,104px) 36px;background:#f2f7f6}
+.los-page-wrap:has(.lead-full-page){max-width:none}
+.lead-full-page>.loan-onboarding-heading,.lead-full-page .lead-page-content{width:100%;max-width:1200px;margin-left:auto;margin-right:auto}
 .lead-full-page .lead-page-content,.lead-full-page .lead-form{width:100%}
-.lead-full-page .loan-application-card.lead-onboarding-card{display:flex;flex-direction:column;gap:14px;padding:0;border:0;background:transparent;box-shadow:none}
+.lead-full-page .loan-application-card.lead-onboarding-card{display:flex;width:100%;flex-direction:column;gap:14px;padding:0;border:0;background:transparent;box-shadow:none}
 .lead-full-page .loan-stepper{display:flex;align-items:center;gap:0;overflow-x:auto;margin:0;padding:8px 14px;border:1px solid #e6eeec;border-radius:12px;background:#fff;box-shadow:0 3px 12px rgba(31,72,65,.04);scrollbar-width:thin}
 .lead-full-page .loan-step{display:inline-flex;flex:1 0 auto;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:36px;padding:5px 10px;border:0;border-radius:7px;background:transparent;color:#5a716c}
 .lead-full-page .loan-step:disabled{opacity:.62}
@@ -538,12 +539,13 @@ const newLeadInlineStyles = `
 .lead-full-page .loan-step-bubble::before{content:none}
 .lead-full-page .loan-step.active .loan-step-bubble{border-color:#128b7f;background:#128b7f;color:#fff}
 .lead-full-page .loan-step-text{font-size:11px;font-weight:600;white-space:nowrap}
-.lead-full-page .lead-step-panel{min-width:0;padding:24px 18px;border:1px solid #e5eeeb;border-radius:14px;background:#fff;box-shadow:0 10px 28px rgba(31,72,65,.07)}
+.lead-full-page .lead-step-panel{min-width:0;padding:24px 18px;border:1px solid #e5eeeb;border-radius:14px;background:#f5f9f7;box-shadow:0 10px 28px rgba(31,72,65,.07)}
 .lead-full-page .lead-step-panel>h2{margin:0 0 20px;padding:0 0 14px;border-bottom:1px solid #edf2f0;color:#173b39;font-size:18px;font-weight:700;line-height:1.35}
 .lead-full-page .lead-field{gap:6px;color:#294642;font-size:11px;font-weight:600}
 .lead-full-page .lead-step-panel input,.lead-full-page .lead-step-panel select,.lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger{height:42px;min-height:42px;padding:0 12px;border:1px solid #899793;border-radius:7px;background:#f8faf9;color:#233c3a;font-size:12px;box-shadow:none}
+.lead-full-page .lead-step-panel input:not([aria-invalid="true"]):not(:disabled),.lead-full-page .lead-step-panel select:not(:disabled),.lead-full-page .lead-step-panel textarea:not(:disabled),.lead-full-page .lead-step-panel .lead-calendar-picker .lead-date-picker-trigger:not([aria-invalid="true"]):not(:disabled){background-color:#fff!important}
 .lead-full-page .lead-step-panel input:focus,.lead-full-page .lead-step-panel select:focus,.lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger:focus-visible{border-color:#16877b;outline:none;box-shadow:0 0 0 3px rgba(22,135,123,.12)}
-.lead-full-page .lead-step-panel input[readonly]:not([name="age"]):not([name="customerType"]),.lead-full-page .lead-computed-field:not([name="age"]):not([name="customerType"]){border-color:#899793;background:#eef3f1!important;color:#667b76}
+.lead-full-page .lead-step-panel input[readonly]:not([name="age"]):not([name="customerType"]),.lead-full-page .lead-computed-field:not([name="age"]):not([name="customerType"]){border-color:#899793;background:#fff!important;color:#667b76}
 .lead-full-page .lead-step-panel input[aria-invalid=true]{border-color:#bd4848;background:#fffafa}
 .lead-full-page .lead-personal-actions button,.lead-full-page .lead-verify-button,.lead-full-page .lead-otp-verify,.lead-full-page .lead-income-consent,.lead-full-page .lead-table-add{min-height:36px;border:1px solid #cfe4df;border-radius:7px;background:#eaf6f3;color:#14766c;font-size:11px;font-weight:650}
 .lead-full-page .lead-personal-actions button:hover,.lead-full-page .lead-verify-button:hover,.lead-full-page .lead-otp-verify:hover,.lead-full-page .lead-income-consent:hover,.lead-full-page .lead-table-add:hover{background:#def0eb}
@@ -588,7 +590,7 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-step-panel input[aria-label*="PIN code"]{background-image:var(--lead-icon-card)!important}
 .lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger{background-image:none!important}
 .lead-full-page .lead-step-panel input[name="age"]{background-image:none!important;padding-left:12px!important}
-.lead-full-page .lead-step-panel .lead-otp-field .lead-field input{border-color:#899793;background-color:#f8faf9!important}
+.lead-full-page .lead-step-panel .lead-otp-field .lead-field input{border-color:#899793;background-color:#fff!important}
 .lead-full-page .lead-step-panel input[name="instalments"],.lead-full-page .lead-step-panel input[name="monthlyEmi"],.lead-full-page .lead-step-panel input[name="totalInterest"],.lead-full-page .lead-step-panel input[name="securityAmount"],.lead-full-page .lead-step-panel input[name="occupation"],.lead-full-page .lead-step-panel input[name="employerType"],.lead-full-page .lead-step-panel input[name="designation"]{background-image:none!important;padding-left:12px!important}
 .lead-full-page .lead-step-panel select[name="acquisitionChannel"]{background-image:none!important;padding-left:12px!important}
 .lead-full-page .lead-step-panel select[name="occupation"],.lead-full-page .lead-step-panel select[name="employerType"]{background-image:none!important;padding-left:12px!important}
@@ -596,16 +598,17 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-step-panel select[name="loanProductType"]{background-image:var(--lead-icon-work)!important}
 .lead-full-page .lead-referral-grid{grid-template-columns:repeat(4,minmax(0,1fr));align-items:end;gap:18px 20px}
 .lead-full-page .lead-referral-channel{grid-column:1;grid-row:1;min-width:0}
-.lead-full-page .lead-referral-date{grid-column:2 / span 3;grid-row:1;min-width:0}
+.lead-full-page .lead-referral-date{grid-column:2 / span 3;grid-row:1;min-width:0;max-width:280px}
 .lead-full-page .lead-referral-partner-id{grid-column:1;grid-row:2;min-width:0}
 .lead-full-page .lead-referral-partner-name{grid-column:2;grid-row:2;min-width:0}
 .lead-full-page .lead-referral-employee-id{grid-column:3;grid-row:2;min-width:0}
 .lead-full-page .lead-referral-employee-name{grid-column:4;grid-row:2;min-width:0}
-.lead-full-page .lead-referral-grid .lead-field input,.lead-full-page .lead-referral-grid .lead-field select,.lead-full-page .lead-referral-date .lead-date-picker-trigger{background-color:#f8faf9!important}
+.lead-full-page .lead-referral-grid .lead-field input,.lead-full-page .lead-referral-grid .lead-field select,.lead-full-page .lead-referral-date .lead-date-picker-trigger{background-color:#fff!important}
 .lead-full-page .lead-referral-date .lead-calendar-picker,.lead-full-page .lead-referral-date .lead-date-picker-trigger{width:100%}
 @media(max-width:760px){.lead-full-page .lead-referral-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-referral-channel,.lead-full-page .lead-referral-partner-id,.lead-full-page .lead-referral-partner-name,.lead-full-page .lead-referral-employee-id,.lead-full-page .lead-referral-employee-name{grid-column:span 1;grid-row:auto}.lead-full-page .lead-referral-date{grid-column:span 2;grid-row:auto}}
 @media(max-width:560px){.lead-full-page .lead-referral-grid{grid-template-columns:1fr}.lead-full-page .lead-referral-channel,.lead-full-page .lead-referral-partner-id,.lead-full-page .lead-referral-partner-name,.lead-full-page .lead-referral-employee-id,.lead-full-page .lead-referral-employee-name,.lead-full-page .lead-referral-date{grid-column:1;grid-row:auto}}
-.lead-full-page .lead-personal-name-row{grid-column:1/-1;display:grid;grid-template-columns:52px repeat(3,minmax(0,1fr));align-items:end;gap:16px;width:100%;max-width:960px}
+.lead-full-page .lead-personal-name-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:16px;width:100%;max-width:960px}
+.lead-full-page .lead-name-first-group{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:end;gap:12px;min-width:0}
 .lead-full-page .lead-personal-grid>.lead-personal-actions{grid-column:1/-1;grid-row:auto;justify-content:flex-start;width:100%;max-width:960px;margin-top:-10px}
 .lead-full-page .lead-personal-actions button{min-height:34px!important;padding:0 12px!important;white-space:nowrap;font-size:10px}
 .lead-full-page .lead-prefix-field select{padding-left:27px!important;padding-right:8px!important}
@@ -613,9 +616,13 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-personal-name-row,.lead-full-page .lead-personal-actions,.lead-full-page .lead-personal-demographics,.lead-full-page .lead-pan-identity-row,.lead-full-page .lead-personal-identity-row,.lead-full-page .lead-personal-contact-row,.lead-full-page .lead-personal-status-row,.lead-full-page .lead-personal-passport-row{max-width:960px}
 .lead-full-page .lead-personal-demographics{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;width:100%}
 .lead-full-page .lead-personal-contact-row,.lead-full-page .lead-personal-status-row,.lead-full-page .lead-personal-passport-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:16px;width:100%}
-.lead-full-page .lead-personal-contact-row{max-width:960px}
-.lead-full-page .lead-pan-identity-row{grid-column:1/-1;display:grid;grid-template-columns:minmax(190px,1fr) auto minmax(100px,.65fr) auto;align-items:end;gap:12px;width:100%}
-.lead-full-page .lead-personal-identity-row{grid-template-columns:minmax(190px,1fr) auto minmax(100px,.65fr) auto;align-items:end;gap:12px;width:100%;max-width:960px}
+.lead-full-page .lead-personal-contact-row,.lead-full-page .lead-personal-status-row,.lead-full-page .lead-personal-passport-row{max-width:960px}
+.lead-full-page .lead-personal-contact-row .lead-field,.lead-full-page .lead-personal-status-row .lead-field,.lead-full-page .lead-personal-passport-row .lead-field,.lead-full-page .lead-pan-identity-row > .lead-field,.lead-full-page .lead-personal-identity-row > .lead-field{max-width:320px}
+.lead-full-page .lead-pan-identity-row,.lead-full-page .lead-personal-identity-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;gap:16px;width:100%;max-width:960px}
+.lead-full-page .lead-otp-combo{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:8px;min-width:0}
+.lead-full-page .lead-identity-validation{grid-column:2;justify-self:start}
+.lead-full-page .lead-otp-combo{grid-column:3}
+.lead-full-page .lead-otp-combo .lead-field{min-width:0}
 .lead-full-page .loan-birth-calendar .react-calendar__navigation{border:1px solid #d6e2de;background:#fff!important}
 .lead-full-page .loan-birth-calendar .react-calendar__navigation button{background:#fff!important;color:#23474c!important}
 .lead-full-page .loan-birth-calendar .react-calendar__navigation button:enabled:hover,.lead-full-page .loan-birth-calendar .react-calendar__navigation button:enabled:focus{background:#e5f3ef!important;color:#0c5d5d!important}
@@ -625,9 +632,9 @@ const newLeadInlineStyles = `
 .lead-full-page .loan-birth-calendar .react-calendar__tile--active,.lead-full-page .loan-birth-calendar .react-calendar__tile--active:enabled:hover,.lead-full-page .loan-birth-calendar .react-calendar__tile--active:enabled:focus{background:#177e7a!important;color:#fff!important}
 .lead-full-page .loan-birth-calendar .react-calendar__tile:disabled{color:#687873!important}
 @media(max-width:900px){.lead-full-page .lead-personal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-personal-demographics{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media(max-width:760px){.lead-full-page .lead-personal-contact-row,.lead-full-page .lead-personal-status-row,.lead-full-page .lead-personal-passport-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:760px){.lead-full-page .lead-personal-name-row{grid-template-columns:52px repeat(3,minmax(72px,1fr));max-width:none}.lead-full-page .lead-personal-grid>.lead-personal-actions{max-width:none;margin-top:-8px}}
-@media(max-width:560px){.lead-full-page .lead-personal-grid{grid-template-columns:1fr}.lead-full-page .lead-personal-name-row{grid-template-columns:repeat(2,minmax(0,1fr));max-width:none}.lead-full-page .lead-personal-name-row .lead-prefix-field{grid-column:1/-1}.lead-full-page .lead-personal-grid>.lead-personal-actions{max-width:none;margin-top:-8px;justify-content:stretch}.lead-full-page .lead-personal-demographics{grid-template-columns:1fr!important;gap:16px;width:100%}.lead-full-page .lead-personal-contact-row,.lead-full-page .lead-personal-status-row,.lead-full-page .lead-personal-passport-row,.lead-full-page .lead-personal-identity-row,.lead-full-page .lead-pan-identity-row{grid-template-columns:1fr!important}}
+@media(max-width:760px){.lead-full-page .lead-otp-combo{grid-template-columns:minmax(0,1fr)}.lead-full-page .lead-otp-combo .lead-otp-verify{width:100%}}
+@media(max-width:760px){.lead-full-page .lead-personal-name-row{grid-template-columns:repeat(3,minmax(0,1fr));max-width:none}.lead-full-page .lead-personal-grid>.lead-personal-actions{max-width:none;margin-top:-8px}}
+@media(max-width:560px){.lead-full-page .lead-personal-grid{grid-template-columns:1fr}.lead-full-page .lead-personal-name-row{grid-template-columns:1fr;max-width:none}.lead-full-page .lead-name-first-group{grid-template-columns:52px minmax(0,1fr)}.lead-full-page .lead-personal-grid>.lead-personal-actions{max-width:none;margin-top:-8px;justify-content:stretch}.lead-full-page .lead-personal-demographics{grid-template-columns:1fr!important;gap:16px;width:100%}.lead-full-page .lead-personal-contact-row,.lead-full-page .lead-personal-status-row,.lead-full-page .lead-personal-passport-row,.lead-full-page .lead-personal-identity-row,.lead-full-page .lead-pan-identity-row{grid-template-columns:1fr!important}.lead-full-page .lead-identity-validation,.lead-full-page .lead-otp-combo{grid-column:1}}
 `;
 
 export default function NewLead({ open, onClose, onCreate, onUpdate, initialData = null }) {
@@ -1108,18 +1115,20 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
   const renderPersonalDetails = () => (
     <div className="lead-personal-grid">
       <div className="lead-personal-name-row">
-        <label className="lead-field lead-prefix-field">
-          <span>Title <em>*</em></span>
-          <select name="namePrefix" value={form.namePrefix} onChange={handleChange} required>
-            <option value="">Select title</option>
-            {getLookupValues('namePrefix', form.namePrefix).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
-          </select>
-        </label>
-        <label className="lead-field">
-          <span>First Name <em>*</em></span>
-          <input name="firstName" value={form.firstName} onChange={handleChange} onBlur={() => setTouchedFields((current) => ({ ...current, firstName: true }))} required minLength={3} maxLength={50} autoComplete="given-name" title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('firstName', form.firstName))} style={{ backgroundColor: '#f5faf8' }} />
-          {getVisibleFieldError('firstName', form.firstName) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('firstName', form.firstName)}</p> : null}
-        </label>
+        <div className="lead-name-first-group">
+          <label className="lead-field lead-prefix-field">
+            <span>Title <em>*</em></span>
+            <select name="namePrefix" value={form.namePrefix} onChange={handleChange} required>
+              <option value="">title</option>
+              {getLookupValues('namePrefix', form.namePrefix).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
+            </select>
+          </label>
+          <label className="lead-field">
+            <span>First Name <em>*</em></span>
+            <input name="firstName" value={form.firstName} onChange={handleChange} onBlur={() => setTouchedFields((current) => ({ ...current, firstName: true }))} required minLength={3} maxLength={50} autoComplete="given-name" title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('firstName', form.firstName))} style={{ backgroundColor: '#f5faf8' }} />
+            {getVisibleFieldError('firstName', form.firstName) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('firstName', form.firstName)}</p> : null}
+          </label>
+        </div>
         <label className="lead-field">
           <span>Middle Name</span>
           <input name="middleName" value={form.middleName} onChange={handleChange} minLength={3} maxLength={50} autoComplete="additional-name" title="Use 3-50 alphabetic characters; single spaces between words are allowed." aria-invalid={Boolean(getVisibleFieldError('middleName', form.middleName))} style={{ backgroundColor: '#f5faf8' }} />
@@ -1160,7 +1169,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         </label>
         <label className="lead-field">
           <span>Age</span>
-          <input name="age" value={computedAge} readOnly className="lead-computed-field" style={{ width: '100%', maxWidth: 'none', borderColor: '#899793', background: '#fff', color: '#233c3a', backgroundImage: 'none', paddingLeft: '12px' }} />
+          <input name="age" value={computedAge} readOnly className="lead-computed-field" style={{ width: '125px', maxWidth: '100%', borderColor: '#899793', background: '#fff', color: '#233c3a', backgroundImage: 'none', paddingLeft: '12px' }} />
         </label>
         <label className="lead-field">
           <span>Customer Type</span>
@@ -1173,27 +1182,31 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
           <span>PAN Card <em>*</em></span>
           <input name="panCard" value={form.panCard} onChange={handleChange} autoComplete="off" maxLength={10} pattern="[A-Z]{5}[0-9]{4}[A-Z]" required title="Enter PAN in the format ABCDE1234F." aria-invalid={Boolean(panValidationMessage && !panValidated)} />
         </label>
-        <button type="button" onClick={handleValidatePan} className="lead-verify-button" style={{ whiteSpace: 'nowrap' }}>Validate PAN</button>
-        <label className="lead-field">
-          <span>OTP Number</span>
-          <input name="panOtpNumber" value={form.panOtpNumber} onChange={handleChange} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} title="Enter the 6-digit PAN OTP." disabled={!panValidated} style={{ minWidth: '100px', maxWidth: '160px' }} />
-        </label>
-        <button type="button" className="lead-otp-verify" onClick={handleVerifyPanOtp} disabled={!panValidated} style={{ whiteSpace: 'nowrap' }}>Verify OTP</button>
+        <button type="button" onClick={handleValidatePan} className="lead-verify-button lead-identity-validation" style={{ whiteSpace: 'nowrap' }}>Validate PAN</button>
+        <div className="lead-otp-combo">
+          <label className="lead-field">
+            <span>OTP Number</span>
+            <input name="panOtpNumber" value={form.panOtpNumber} onChange={handleChange} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} title="Enter the 6-digit PAN OTP." disabled={!panValidated} />
+          </label>
+          <button type="button" className="lead-otp-verify" onClick={handleVerifyPanOtp} disabled={!panValidated} style={{ whiteSpace: 'nowrap' }}>Verify OTP</button>
+        </div>
         {panValidationMessage ? <p className={`lead-inline-hint${panValidated ? '' : ' lead-inline-hint-error'}`} role="status" style={{ gridColumn: '1 / -1' }}>{panValidationMessage}</p> : null}
         {panOtpMessage ? <p className="lead-otp-message" role="status" style={{ gridColumn: '1 / -1' }}>{panOtpMessage}</p> : null}
       </div>
 
-      <div className="lead-personal-identity-row" style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'minmax(190px, 1fr) auto minmax(100px, .65fr) auto', alignItems: 'end', gap: '12px', width: '100%', maxWidth: '960px' }}>
+      <div className="lead-personal-identity-row">
         <label className="lead-field">
           <span>Aadhaar Number <em>*</em></span>
-          <input name="aadhaarCard" value={form.aadhaarCard} onChange={handleChange} inputMode="numeric" autoComplete="off" pattern="[0-9]{12}" maxLength={12} required aria-invalid={aadhaarInputInvalid} aria-describedby="lead-aadhaar-hint" title="Enter a valid 12-digit Aadhaar number without spaces." style={{ minWidth: '0' }} />
+          <input name="aadhaarCard" value={form.aadhaarCard} onChange={handleChange} inputMode="numeric" autoComplete="off" pattern="[0-9]{12}" maxLength={12} required aria-invalid={aadhaarInputInvalid} aria-describedby="lead-aadhaar-hint" title="Enter a valid 12-digit Aadhaar number without spaces." />
         </label>
-        <button type="button" onClick={handleValidateAadhaar} className="lead-verify-button" style={{ whiteSpace: 'nowrap' }}>Validate Aadhaar</button>
-        <label className="lead-field">
-          <span>OTP Number</span>
-          <input name="otpNumber" value={form.otpNumber} onChange={handleChange} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} title="Enter the 6-digit OTP." disabled={!aadhaarValidated} style={{ minWidth: '100px', maxWidth: '160px' }} />
-        </label>
-        <button type="button" className="lead-otp-verify" onClick={handleVerifyOtp} disabled={!aadhaarValidated} style={{ whiteSpace: 'nowrap' }}>Verify OTP</button>
+        <button type="button" onClick={handleValidateAadhaar} className="lead-verify-button lead-identity-validation" style={{ whiteSpace: 'nowrap' }}>Validate Aadhaar</button>
+        <div className="lead-otp-combo">
+          <label className="lead-field">
+            <span>OTP Number</span>
+            <input name="otpNumber" value={form.otpNumber} onChange={handleChange} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} title="Enter the 6-digit OTP." disabled={!aadhaarValidated} />
+          </label>
+          <button type="button" className="lead-otp-verify" onClick={handleVerifyOtp} disabled={!aadhaarValidated} style={{ whiteSpace: 'nowrap' }}>Verify OTP</button>
+        </div>
         <p id="lead-aadhaar-hint" role="status" className={`lead-inline-hint${aadhaarInputInvalid ? ' lead-inline-hint-error' : ''}`} style={{ gridColumn: '1 / -1' }}>{aadhaarMessage || 'Enter the 12-digit Aadhaar number.'}</p>
         {otpMessage ? <p className="lead-otp-message" role="status" style={{ gridColumn: '1 / -1' }}>{otpMessage}</p> : null}
       </div>
