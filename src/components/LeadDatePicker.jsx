@@ -48,6 +48,7 @@ export default function LeadDatePicker({
   required = false,
   className = '',
   invalid = false,
+  triggerStyle,
 }) {
   const containerRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -86,6 +87,7 @@ export default function LeadDatePicker({
           aria-invalid={invalid || undefined}
           data-date-picker-trigger={name}
           disabled={disabled}
+          style={triggerStyle}
           onClick={() => setIsOpen((open) => !open)}
         >
           <span className={value ? '' : 'dob-picker-placeholder'}>{formatDate(value)}</span>
