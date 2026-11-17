@@ -492,16 +492,10 @@ const validateStep = (stepIndex, values) => {
       }
     });
 
-    const spouseDetailsProvided = [
-      values.spouseTitle,
-      values.spouseFirstName,
-      values.spouseMiddleName,
-      values.spouseLastName
-    ].some((value) => String(value || '').trim());
-    if (values.maritalStatus === 'Married' || spouseDetailsProvided) {
+    required('spouseFirstName', values.spouseFirstName, "Spouse's first name is required.");
+    required('spouseLastName', values.spouseLastName, "Spouse's last name is required.");
+    if (values.maritalStatus === 'Married') {
       required('spouseTitle', values.spouseTitle, "Spouse's title is required.");
-      required('spouseFirstName', values.spouseFirstName, "Spouse's first name is required.");
-      required('spouseLastName', values.spouseLastName, "Spouse's last name is required.");
     }
     required('mobileNo', values.mobileNo, 'Mobile number is required.');
 
@@ -1159,8 +1153,7 @@ export default function LoanApplicationPage() {
       else delete errors[field];
       if (field === 'title' && mappedGender) delete errors.gender;
       if (field === 'maritalStatus' && sanitizedValue !== 'Married') {
-        ['spouseTitle', 'spouseFirstName', 'spouseMiddleName', 'spouseLastName']
-          .forEach((spouseField) => delete errors[spouseField]);
+        delete errors.spouseTitle;
       }
       return { ...previous, [currentStep]: errors };
     });
@@ -1707,7 +1700,7 @@ export default function LoanApplicationPage() {
                   error={currentStepErrors.spouseTitle}
                 />
                 <Field
-                  label={form.maritalStatus === 'Married' ? "Spouse's First Name *" : "Spouse's First Name"}
+                  label="Spouse's First Name *"
                   value={form.spouseFirstName}
                   onChange={(value) => updateField('spouseFirstName', value)}
                   maxLength={NAME_MAX_LENGTH}
@@ -1721,7 +1714,7 @@ export default function LoanApplicationPage() {
                   error={currentStepErrors.spouseMiddleName}
                 />
                 <Field
-                  label={form.maritalStatus === 'Married' ? "Spouse's Last Name *" : "Spouse's Last Name"}
+                  label="Spouse's Last Name *"
                   value={form.spouseLastName}
                   onChange={(value) => updateField('spouseLastName', value)}
                   maxLength={NAME_MAX_LENGTH}
