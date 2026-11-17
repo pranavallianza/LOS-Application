@@ -524,10 +524,11 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-step-panel .lead-otp-field .lead-field input{width:160px;max-width:100%;background:#fff}
 @media(max-width:900px){.lead-full-page .loan-application-card.lead-onboarding-card{padding:20px 52px 22px}.lead-full-page .lead-step-panel{padding:0 6px}}
 @media(max-width:560px){.lead-full-page{padding-left:24px;padding-right:24px}.lead-full-page .loan-application-card.lead-onboarding-card{padding:18px 36px 20px}.lead-full-page .lead-step-panel{padding:0}.lead-full-page .lead-personal-grid,.lead-full-page .lead-income-grid,.lead-full-page .lead-referral-grid,.lead-full-page .lead-address-row{row-gap:16px;column-gap:14px}.lead-full-page .lead-personal-demographics{gap:16px}.lead-full-page .lead-personal-actions{grid-column:1/-1;grid-row:auto}.lead-full-page .lead-step-panel .lead-otp-field .lead-field input{width:100%}}
-.lead-full-page{padding:24px clamp(24px,8vw,104px) 36px;background:#f2f7f6}
-.lead-full-page>.loan-onboarding-heading,.lead-full-page .lead-page-content{max-width:1200px}
+.lead-full-page{display:flex;width:100%;box-sizing:border-box;flex-direction:column;align-items:center;padding:24px clamp(24px,8vw,104px) 36px;background:#f2f7f6}
+.los-page-wrap:has(.lead-full-page){max-width:none}
+.lead-full-page>.loan-onboarding-heading,.lead-full-page .lead-page-content{width:100%;max-width:1200px;margin-left:auto;margin-right:auto}
 .lead-full-page .lead-page-content,.lead-full-page .lead-form{width:100%}
-.lead-full-page .loan-application-card.lead-onboarding-card{display:flex;flex-direction:column;gap:14px;padding:0;border:0;background:transparent;box-shadow:none}
+.lead-full-page .loan-application-card.lead-onboarding-card{display:flex;width:100%;flex-direction:column;gap:14px;padding:0;border:0;background:transparent;box-shadow:none}
 .lead-full-page .loan-stepper{display:flex;align-items:center;gap:0;overflow-x:auto;margin:0;padding:8px 14px;border:1px solid #e6eeec;border-radius:12px;background:#fff;box-shadow:0 3px 12px rgba(31,72,65,.04);scrollbar-width:thin}
 .lead-full-page .loan-step{display:inline-flex;flex:1 0 auto;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:36px;padding:5px 10px;border:0;border-radius:7px;background:transparent;color:#5a716c}
 .lead-full-page .loan-step:disabled{opacity:.62}
@@ -538,12 +539,13 @@ const newLeadInlineStyles = `
 .lead-full-page .loan-step-bubble::before{content:none}
 .lead-full-page .loan-step.active .loan-step-bubble{border-color:#128b7f;background:#128b7f;color:#fff}
 .lead-full-page .loan-step-text{font-size:11px;font-weight:600;white-space:nowrap}
-.lead-full-page .lead-step-panel{min-width:0;padding:24px 18px;border:1px solid #e5eeeb;border-radius:14px;background:#fff;box-shadow:0 10px 28px rgba(31,72,65,.07)}
+.lead-full-page .lead-step-panel{min-width:0;padding:24px 18px;border:1px solid #e5eeeb;border-radius:14px;background:#f5f9f7;box-shadow:0 10px 28px rgba(31,72,65,.07)}
 .lead-full-page .lead-step-panel>h2{margin:0 0 20px;padding:0 0 14px;border-bottom:1px solid #edf2f0;color:#173b39;font-size:18px;font-weight:700;line-height:1.35}
 .lead-full-page .lead-field{gap:6px;color:#294642;font-size:11px;font-weight:600}
 .lead-full-page .lead-step-panel input,.lead-full-page .lead-step-panel select,.lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger{height:42px;min-height:42px;padding:0 12px;border:1px solid #899793;border-radius:7px;background:#f8faf9;color:#233c3a;font-size:12px;box-shadow:none}
+.lead-full-page .lead-step-panel input:not([aria-invalid="true"]):not(:disabled),.lead-full-page .lead-step-panel select:not(:disabled),.lead-full-page .lead-step-panel textarea:not(:disabled),.lead-full-page .lead-step-panel .lead-calendar-picker .lead-date-picker-trigger:not([aria-invalid="true"]):not(:disabled){background-color:#fff!important}
 .lead-full-page .lead-step-panel input:focus,.lead-full-page .lead-step-panel select:focus,.lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger:focus-visible{border-color:#16877b;outline:none;box-shadow:0 0 0 3px rgba(22,135,123,.12)}
-.lead-full-page .lead-step-panel input[readonly]:not([name="age"]):not([name="customerType"]),.lead-full-page .lead-computed-field:not([name="age"]):not([name="customerType"]){border-color:#899793;background:#eef3f1!important;color:#667b76}
+.lead-full-page .lead-step-panel input[readonly]:not([name="age"]):not([name="customerType"]),.lead-full-page .lead-computed-field:not([name="age"]):not([name="customerType"]){border-color:#899793;background:#fff!important;color:#667b76}
 .lead-full-page .lead-step-panel input[aria-invalid=true]{border-color:#bd4848;background:#fffafa}
 .lead-full-page .lead-personal-actions button,.lead-full-page .lead-verify-button,.lead-full-page .lead-otp-verify,.lead-full-page .lead-income-consent,.lead-full-page .lead-table-add{min-height:36px;border:1px solid #cfe4df;border-radius:7px;background:#eaf6f3;color:#14766c;font-size:11px;font-weight:650}
 .lead-full-page .lead-personal-actions button:hover,.lead-full-page .lead-verify-button:hover,.lead-full-page .lead-otp-verify:hover,.lead-full-page .lead-income-consent:hover,.lead-full-page .lead-table-add:hover{background:#def0eb}
@@ -588,7 +590,7 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-step-panel input[aria-label*="PIN code"]{background-image:var(--lead-icon-card)!important}
 .lead-full-page .lead-personal-demographics .lead-calendar-picker .lead-date-picker-trigger{background-image:none!important}
 .lead-full-page .lead-step-panel input[name="age"]{background-image:none!important;padding-left:12px!important}
-.lead-full-page .lead-step-panel .lead-otp-field .lead-field input{border-color:#899793;background-color:#f8faf9!important}
+.lead-full-page .lead-step-panel .lead-otp-field .lead-field input{border-color:#899793;background-color:#fff!important}
 .lead-full-page .lead-step-panel input[name="instalments"],.lead-full-page .lead-step-panel input[name="monthlyEmi"],.lead-full-page .lead-step-panel input[name="totalInterest"],.lead-full-page .lead-step-panel input[name="securityAmount"],.lead-full-page .lead-step-panel input[name="occupation"],.lead-full-page .lead-step-panel input[name="employerType"],.lead-full-page .lead-step-panel input[name="designation"]{background-image:none!important;padding-left:12px!important}
 .lead-full-page .lead-step-panel select[name="acquisitionChannel"]{background-image:none!important;padding-left:12px!important}
 .lead-full-page .lead-step-panel select[name="occupation"],.lead-full-page .lead-step-panel select[name="employerType"]{background-image:none!important;padding-left:12px!important}
@@ -601,7 +603,7 @@ const newLeadInlineStyles = `
 .lead-full-page .lead-referral-partner-name{grid-column:2;grid-row:2;min-width:0}
 .lead-full-page .lead-referral-employee-id{grid-column:3;grid-row:2;min-width:0}
 .lead-full-page .lead-referral-employee-name{grid-column:4;grid-row:2;min-width:0}
-.lead-full-page .lead-referral-grid .lead-field input,.lead-full-page .lead-referral-grid .lead-field select,.lead-full-page .lead-referral-date .lead-date-picker-trigger{background-color:#f8faf9!important}
+.lead-full-page .lead-referral-grid .lead-field input,.lead-full-page .lead-referral-grid .lead-field select,.lead-full-page .lead-referral-date .lead-date-picker-trigger{background-color:#fff!important}
 .lead-full-page .lead-referral-date .lead-calendar-picker,.lead-full-page .lead-referral-date .lead-date-picker-trigger{width:100%}
 @media(max-width:760px){.lead-full-page .lead-referral-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-full-page .lead-referral-channel,.lead-full-page .lead-referral-partner-id,.lead-full-page .lead-referral-partner-name,.lead-full-page .lead-referral-employee-id,.lead-full-page .lead-referral-employee-name{grid-column:span 1;grid-row:auto}.lead-full-page .lead-referral-date{grid-column:span 2;grid-row:auto}}
 @media(max-width:560px){.lead-full-page .lead-referral-grid{grid-template-columns:1fr}.lead-full-page .lead-referral-channel,.lead-full-page .lead-referral-partner-id,.lead-full-page .lead-referral-partner-name,.lead-full-page .lead-referral-employee-id,.lead-full-page .lead-referral-employee-name,.lead-full-page .lead-referral-date{grid-column:1;grid-row:auto}}
@@ -1117,7 +1119,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
           <label className="lead-field lead-prefix-field">
             <span>Title <em>*</em></span>
             <select name="namePrefix" value={form.namePrefix} onChange={handleChange} required>
-              <option value="">Select title</option>
+              <option value="">title</option>
               {getLookupValues('namePrefix', form.namePrefix).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
             </select>
           </label>
@@ -1167,7 +1169,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         </label>
         <label className="lead-field">
           <span>Age</span>
-          <input name="age" value={computedAge} readOnly className="lead-computed-field" style={{ width: '100%', maxWidth: 'none', borderColor: '#899793', background: '#fff', color: '#233c3a', backgroundImage: 'none', paddingLeft: '12px' }} />
+          <input name="age" value={computedAge} readOnly className="lead-computed-field" style={{ width: '125px', maxWidth: '100%', borderColor: '#899793', background: '#fff', color: '#233c3a', backgroundImage: 'none', paddingLeft: '12px' }} />
         </label>
         <label className="lead-field">
           <span>Customer Type</span>
