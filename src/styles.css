@@ -2761,10 +2761,16 @@ td strong {
 }
 .customer-onboarding-shell .field-grid {
   row-gap: 18px;
-  column-gap: 54px;
+  column-gap: 20px;
 }
 .customer-onboarding-shell .name-four-col {
   grid-template-columns: 90px repeat(3, minmax(0, 1fr));
+}
+.customer-onboarding-shell .personal-dob-field {
+  grid-column: span 2;
+}
+.customer-onboarding-shell .personal-four-col {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .customer-onboarding-shell .customer-onboarding-compact-field input,
 .customer-onboarding-shell .customer-onboarding-compact-field select {
@@ -2774,6 +2780,9 @@ td strong {
   .customer-onboarding-shell .name-four-col {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  .customer-onboarding-shell .personal-four-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 @media (max-width: 600px) {
   .customer-onboarding-shell .field-grid {
@@ -2781,6 +2790,12 @@ td strong {
     column-gap: 36px;
   }
   .customer-onboarding-shell .name-four-col {
+    grid-template-columns: 1fr;
+  }
+  .customer-onboarding-shell .personal-dob-field {
+    grid-column: auto;
+  }
+  .customer-onboarding-shell .personal-four-col {
     grid-template-columns: 1fr;
   }
 }

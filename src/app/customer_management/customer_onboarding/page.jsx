@@ -1594,11 +1594,10 @@ export default function LoanApplicationPage() {
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.lastName}
                 />
-              </div>
 
-              <div className="field-grid two-col">
                 <Field
                   label="Date of Birth *"
+                  className="personal-dob-field"
                   value={form.dob}
                   onChange={(value) => updateField('dob', value)}
                   error={currentStepErrors.dob}
@@ -1622,7 +1621,6 @@ export default function LoanApplicationPage() {
 
                 <Field
                   label="Age"
-                  className="customer-onboarding-compact-field"
                   value={form.age}
                   onChange={() => { }}
                   readOnly
@@ -1638,21 +1636,21 @@ export default function LoanApplicationPage() {
                   error={currentStepErrors.fatherTitle}
                 />
                 <Field
-                  label="Father's / Husband's First Name *"
+                  label="Father / Husband First Name *"
                   value={form.fatherFirstName}
                   onChange={(value) => updateField('fatherFirstName', value)}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.fatherFirstName}
                 />
                 <Field
-                  label="Father's / Husband's Middle Name"
+                  label="Father / Husband Middle Name"
                   value={form.fatherMiddleName}
                   onChange={(value) => updateField('fatherMiddleName', value)}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.fatherMiddleName}
                 />
                 <Field
-                  label="Father's / Husband's Last Name *"
+                  label="Father / Husband Last Name *"
                   value={form.fatherLastName}
                   onChange={(value) => updateField('fatherLastName', value)}
                   maxLength={NAME_MAX_LENGTH}
@@ -1669,21 +1667,21 @@ export default function LoanApplicationPage() {
                   error={currentStepErrors.motherTitle}
                 />
                 <Field
-                  label="Mother's First Name *"
+                  label="Mother First Name *"
                   value={form.motherFirstName}
                   onChange={(value) => updateField('motherFirstName', value)}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.motherFirstName}
                 />
                 <Field
-                  label="Mother's Middle Name"
+                  label="Mother Middle Name"
                   value={form.motherMiddleName}
                   onChange={(value) => updateField('motherMiddleName', value)}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.motherMiddleName}
                 />
                 <Field
-                  label="Mother's Last Name *"
+                  label="Mother Last Name *"
                   value={form.motherLastName}
                   onChange={(value) => updateField('motherLastName', value)}
                   maxLength={NAME_MAX_LENGTH}
@@ -1700,21 +1698,21 @@ export default function LoanApplicationPage() {
                   error={currentStepErrors.spouseTitle}
                 />
                 <Field
-                  label="Spouse's First Name *"
+                  label="Spouse First Name *"
                   value={form.spouseFirstName}
                   onChange={(value) => updateField('spouseFirstName', value)}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.spouseFirstName}
                 />
                 <Field
-                  label="Spouse's Middle Name"
+                  label="Spouse Middle Name"
                   value={form.spouseMiddleName}
                   onChange={(value) => updateField('spouseMiddleName', value)}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.spouseMiddleName}
                 />
                 <Field
-                  label="Spouse's Last Name *"
+                  label="Spouse Last Name *"
                   value={form.spouseLastName}
                   onChange={(value) => updateField('spouseLastName', value)}
                   maxLength={NAME_MAX_LENGTH}
@@ -1722,7 +1720,15 @@ export default function LoanApplicationPage() {
                 />
               </div>
 
-              <div className="field-grid two-col">
+              <div className="field-grid name-four-col">
+                <SelectField
+                  label="Customer *"
+                  value={form.customerType}
+                  onChange={(value) => updateField('customerType', value)}
+                  options={['Minor', 'Adult', 'Senior']}
+                  error={currentStepErrors.customerType}
+                />
+
                 <Field
                   label="Email ID *"
                   type="email"
@@ -1731,18 +1737,29 @@ export default function LoanApplicationPage() {
                   error={currentStepErrors.email}
                 />
 
-                <SelectField
-                  label="Customer Type *"
-                  value={form.customerType}
-                  onChange={(value) => updateField('customerType', value)}
-                  options={['Minor', 'Adult', 'Senior']}
-                  error={currentStepErrors.customerType}
-                />
-
                 <Field
                   label="KYC Status"
                   value={form.kycStatus}
                   onChange={(value) => updateField('kycStatus', value)}
+                />
+
+                <Field
+                  label="CKYC *"
+                  value={form.kycRegn}
+                  onChange={(value) => updateField('kycRegn', value)}
+                  inputMode="numeric"
+                  maxLength={14}
+                  error={currentStepErrors.kycRegn}
+                />
+              </div>
+
+              <div className="field-grid name-four-col">
+                <SelectField
+                  label="Gender *"
+                  value={form.gender}
+                  onChange={(value) => updateField('gender', value)}
+                  options={['Male', 'Female', 'Other']}
+                  error={currentStepErrors.gender}
                 />
 
                 <Field
@@ -1757,24 +1774,6 @@ export default function LoanApplicationPage() {
                   inputMode="numeric"
                   maxLength={12}
                   error={currentStepErrors.aadhaarNumber}
-                />
-
-                <Field
-                  label="CKYC *"
-                  value={form.kycRegn}
-                  onChange={(value) => updateField('kycRegn', value)}
-                  inputMode="numeric"
-                  maxLength={14}
-                  error={currentStepErrors.kycRegn}
-                />
-
-                <SelectField
-                  label="Gender *"
-                  className="customer-onboarding-compact-field"
-                  value={form.gender}
-                  onChange={(value) => updateField('gender', value)}
-                  options={['Male', 'Female', 'Other']}
-                  error={currentStepErrors.gender}
                 />
 
                 <Field
@@ -1804,20 +1803,19 @@ export default function LoanApplicationPage() {
                   maxLength={10}
                   error={currentStepErrors.alternateContact}
                 />
-
-                <Field
-                  label="Occupation"
-                  value={form.occupation}
-                  onChange={(value) => updateField('occupation', value)}
-                />
               </div>
 
-              <div className="field-grid two-col">
+              <div className="field-grid name-four-col">
                 <SelectField
                   label="Marital Status"
                   value={form.maritalStatus}
                   onChange={(value) => updateField('maritalStatus', value)}
                   options={['Married', 'Unmarried', 'Widowed', 'Divorced']}
+                />
+                <Field
+                  label="Occupation"
+                  value={form.occupation}
+                  onChange={(value) => updateField('occupation', value)}
                 />
               </div>
 
@@ -1827,7 +1825,7 @@ export default function LoanApplicationPage() {
           {/* Step 2: Address Details */}
           {currentStep === 1 && (
             <div className="loan-form-section">
-              <div className="field-grid two-col">
+              <div className="field-grid three-col">
                 <SelectField
                   label="Residential Status *"
                   value={form.residentialStatus}
@@ -1927,7 +1925,6 @@ export default function LoanApplicationPage() {
                   maxLength={6}
                   error={currentStepErrors.pinCode}
                 />
-
               </div>
             </div>
           )}
