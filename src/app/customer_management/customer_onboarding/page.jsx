@@ -65,9 +65,17 @@ const PERSON_NAME_FIELDS = new Set([
   'fullName',
   'middleName',
   'lastName',
-  'fatherName',
-  'motherName'
+  'fatherFirstName',
+  'fatherMiddleName',
+  'fatherLastName',
+  'motherFirstName',
+  'motherMiddleName',
+  'motherLastName',
+  'spouseFirstName',
+  'spouseMiddleName',
+  'spouseLastName'
 ]);
+const TITLE_OPTIONS = ['Mr', 'Ms', 'Mrs'];
 const LETTERS_ONLY_FIELDS = new Set([
   ...PERSON_NAME_FIELDS,
   'branch',
@@ -135,7 +143,7 @@ const sanitizeInput = (key, value) => {
             ? 14
             : key === 'bankAccountNo'
               ? 18
-            : undefined;
+              : undefined;
     const digits = value.replace(/\D/g, '');
     return limit ? digits.slice(0, limit) : digits;
   }
@@ -228,15 +236,27 @@ const createTaxReturns = () => {
 const createInitialForm = () => ({
   leadId: '',
   panCard: '',
-    branch: '',
+  branch: '',
   title: '',
   fullName: '',
   middleName: '',
   lastName: '',
   dob: '',
   age: '',
+  fatherTitle: '',
+  fatherFirstName: '',
+  fatherMiddleName: '',
+  fatherLastName: '',
   fatherName: '',
+  motherTitle: '',
+  motherFirstName: '',
+  motherMiddleName: '',
+  motherLastName: '',
   motherName: '',
+  spouseTitle: '',
+  spouseFirstName: '',
+  spouseMiddleName: '',
+  spouseLastName: '',
   email: '',
   customerType: '',
   kycStatus: '',
@@ -347,6 +367,17 @@ const getTodayInputDate = () => {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 };
 
+const splitName = (name) => {
+  const [firstName = '', ...remainingNames] = String(name || '').trim().split(/\s+/);
+  const lastName = remainingNames.length ? remainingNames.pop() : '';
+
+  return {
+    firstName,
+    middleName: remainingNames.join(' '),
+    lastName
+  };
+};
+
 const getDobMinimumDate = () => {
   const minimumDate = new Date();
   minimumDate.setFullYear(minimumDate.getFullYear() - 80);
@@ -394,9 +425,8 @@ const validateStep = (stepIndex, values) => {
       !isNonNegativeNumber(value) ||
       (positive && Number(value) <= 0)
     ) {
-      errors[key] = `${label} must be a valid ${
-        positive ? 'positive' : 'non-negative'
-      } amount.`;
+      errors[key] = `${label} must be a valid ${positive ? 'positive' : 'non-negative'
+        } amount.`;
     }
   };
 
@@ -417,13 +447,20 @@ const validateStep = (stepIndex, values) => {
       ['fullName', values.fullName, 'First name'],
       ['middleName', values.middleName, 'Middle name'],
       ['lastName', values.lastName, 'Last name'],
-      ['fatherName', values.fatherName, "Father's / husband's name"],
-      ['motherName', values.motherName, "Mother's name"]
+      ['fatherFirstName', values.fatherFirstName, "Father's / husband's first name"],
+      ['fatherMiddleName', values.fatherMiddleName, "Father's / husband's middle name"],
+      ['fatherLastName', values.fatherLastName, "Father's / husband's last name"],
+      ['motherFirstName', values.motherFirstName, "Mother's first name"],
+      ['motherMiddleName', values.motherMiddleName, "Mother's middle name"],
+      ['motherLastName', values.motherLastName, "Mother's last name"],
+      ['spouseFirstName', values.spouseFirstName, "Spouse's first name"],
+      ['spouseMiddleName', values.spouseMiddleName, "Spouse's middle name"],
+      ['spouseLastName', values.spouseLastName, "Spouse's last name"]
     ].forEach(([key, value, label]) => {
       if (value) {
         const trimmed = value.trim();
         if (trimmed.length < 3 || !NAME_REGEX.test(trimmed) || trimmed.length > NAME_MAX_LENGTH) {
-          errors[key] = `${label} must be 3 to 50 characters and contain letters only.`;
+          errors[key] = `${label} must be 3 to 50 characters and contain letters and common punctuation only.`;
         }
       }
     });
@@ -442,12 +479,30 @@ const validateStep = (stepIndex, values) => {
     }
 
     required('gender', values.gender, 'Select a gender.');
-    required(
-      'fatherName',
-      values.fatherName,
-      "Father's / husband's name is required."
-    );
-    required('motherName', values.motherName, "Mother's name is required.");
+    required('fatherTitle', values.fatherTitle, "Father's / husband's title is required.");
+    required('fatherFirstName', values.fatherFirstName, "Father's / husband's first name is required.");
+    required('fatherLastName', values.fatherLastName, "Father's / husband's last name is required.");
+    required('motherTitle', values.motherTitle, "Mother's title is required.");
+    required('motherFirstName', values.motherFirstName, "Mother's first name is required.");
+    required('motherLastName', values.motherLastName, "Mother's last name is required.");
+
+    ['fatherTitle', 'motherTitle', 'spouseTitle'].forEach((key) => {
+      if (values[key] && !TITLE_OPTIONS.includes(values[key])) {
+        errors[key] = 'Select a valid title.';
+      }
+    });
+
+    const spouseDetailsProvided = [
+      values.spouseTitle,
+      values.spouseFirstName,
+      values.spouseMiddleName,
+      values.spouseLastName
+    ].some((value) => String(value || '').trim());
+    if (values.maritalStatus === 'Married' || spouseDetailsProvided) {
+      required('spouseTitle', values.spouseTitle, "Spouse's title is required.");
+      required('spouseFirstName', values.spouseFirstName, "Spouse's first name is required.");
+      required('spouseLastName', values.spouseLastName, "Spouse's last name is required.");
+    }
     required('mobileNo', values.mobileNo, 'Mobile number is required.');
 
     if (values.mobileNo && !MOBILE_REGEX.test(values.mobileNo)) {
@@ -797,7 +852,6 @@ function Field({
   label,
   value,
   onChange,
-  placeholder,
   type = 'text',
   inputMode,
   maxLength,
@@ -807,14 +861,15 @@ function Field({
   step,
   readOnly,
   children,
-  datePickerName
+  datePickerName,
+  className = ''
 }) {
   const isRequired = /\s\*$/.test(label);
   const displayLabel = isRequired ? label.replace(/\s\*$/, '') : label;
   const id = `field-${displayLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 
   return (
-    <label className="loan-field" htmlFor={id}>
+    <label className={`loan-field ${className}`} htmlFor={id}>
       <span>{displayLabel}{isRequired && <em className="customer-required-mark">*</em>}</span>
 
       {children || (type === 'date' ? (
@@ -829,6 +884,7 @@ function Field({
           calendarStartDate={value || max || min}
           className="customer-onboarding-date-picker"
           invalid={Boolean(error)}
+          emptyLabel=""
         />
       ) : (
         <input
@@ -836,7 +892,6 @@ function Field({
           type={type}
           value={value ?? ''}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
           inputMode={inputMode || undefined}
           maxLength={maxLength}
           min={min}
@@ -859,13 +914,14 @@ function SelectField({
   onChange,
   options,
   placeholder = 'Select',
-  error
+  error,
+  className = ''
 }) {
   const isRequired = /\s\*$/.test(label);
   const displayLabel = isRequired ? label.replace(/\s\*$/, '') : label;
 
   return (
-    <label className="loan-field">
+    <label className={`loan-field ${className}`}>
       <span>{displayLabel}{isRequired && <em className="customer-required-mark">*</em>}</span>
 
       <select
@@ -900,7 +956,6 @@ function TableInput({
   value,
   onChange,
   type = 'text',
-  placeholder,
   min,
   step,
   error,
@@ -920,13 +975,13 @@ function TableInput({
           calendarStartDate={value || min}
           className="customer-onboarding-date-picker"
           invalid={Boolean(error)}
+          emptyLabel=""
         />
       ) : (
         <input
           type={type}
           value={value ?? ''}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
           min={min}
           step={step}
           aria-label={label}
@@ -1008,11 +1063,19 @@ export default function LoanApplicationPage() {
       const savedForm = customer.onboardingForm && typeof customer.onboardingForm === 'object'
         ? customer.onboardingForm
         : {};
+      const savedFatherName = splitName(savedForm.fatherName);
+      const savedMotherName = splitName(savedForm.motherName);
       const [firstName, ...lastNameParts] = String(customer.name || '').trim().split(/\s+/);
       const digitsOnlyPhone = String(customer.phone || '').replace(/\D/g, '');
       setForm({
         ...createInitialForm(),
         ...savedForm,
+        fatherFirstName: savedForm.fatherFirstName || savedFatherName.firstName,
+        fatherMiddleName: savedForm.fatherMiddleName ?? savedFatherName.middleName,
+        fatherLastName: savedForm.fatherLastName || savedFatherName.lastName,
+        motherFirstName: savedForm.motherFirstName || savedMotherName.firstName,
+        motherMiddleName: savedForm.motherMiddleName ?? savedMotherName.middleName,
+        motherLastName: savedForm.motherLastName || savedMotherName.lastName,
         fullName: savedForm.fullName || firstName || '',
         lastName: savedForm.lastName || lastNameParts.join(' '),
         customerType: normalizeCustomerType(
@@ -1095,6 +1158,10 @@ export default function LoanApplicationPage() {
       if (liveError) errors[field] = liveError;
       else delete errors[field];
       if (field === 'title' && mappedGender) delete errors.gender;
+      if (field === 'maritalStatus' && sanitizedValue !== 'Married') {
+        ['spouseTitle', 'spouseFirstName', 'spouseMiddleName', 'spouseLastName']
+          .forEach((spouseField) => delete errors[spouseField]);
+      }
       return { ...previous, [currentStep]: errors };
     });
     setSaveError('');
@@ -1231,7 +1298,18 @@ export default function LoanApplicationPage() {
       const records = readCustomerRecords(api.customers);
       const existingCustomer = records.find((record) => record.id === customerId);
       const id = customerId || createCustomerId(records);
-      const updatedCustomer = createCustomerRecord(form, {
+      const formToSave = {
+        ...form,
+        fatherName: [form.fatherFirstName, form.fatherMiddleName, form.fatherLastName]
+          .map((part) => String(part || '').trim())
+          .filter(Boolean)
+          .join(' '),
+        motherName: [form.motherFirstName, form.motherMiddleName, form.motherLastName]
+          .map((part) => String(part || '').trim())
+          .filter(Boolean)
+          .join(' ')
+      };
+      const updatedCustomer = createCustomerRecord(formToSave, {
         ...(existingCustomer || {}),
         id,
       });
@@ -1403,10 +1481,17 @@ export default function LoanApplicationPage() {
         .customer-onboarding-notice-error{border-color:#efcaca;background:#fff5f5;color:#8f2d2d}
         .customer-onboarding-notice span{font-size:12px}
       `}</style>
-      <div className="loan-application-shell">
+      <div className="loan-application-shell customer-onboarding-shell"
+        style={{
+          paddingLeft: "25px",
+          paddingRight: "25px",
+          boxSizing: "border-box",
+          width: "100%",
+        }}
+      >
         <div className="loan-onboarding-heading" style={{ marginTop: '-15px', marginBottom: '26px', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>{isEditMode ? 'Edit Individual Customer' : 'Individual Customer Onboarding'}</h1>
+            <h1 style={{ margin: 10, color: '#23474C', font: '700 23px Manrope' }}>{isEditMode ? 'Edit Individual Customer' : 'Individual Customer Onboarding'}</h1>
             {isEditMode && <p className="customer-edit-id">Customer ID: {customerId}</p>}
           </div>
           <Link href="/customer_management" className="loan-back-button" style={{ height: '32px', minWidth: 'auto', padding: '0 10px', gap: '5px', fontSize: '13px', background: '#368262', borderColor: '#368262', color: '#fff', textDecoration: 'none' }}>
@@ -1414,8 +1499,14 @@ export default function LoanApplicationPage() {
             Back
           </Link>
         </div>
-        <div className="loan-application-card">
-          <nav className="loan-stepper" aria-label="Customer onboarding steps">
+        <div className="loan-application-card" style={{
+          paddingLeft: "60px",
+          paddingRight: "60px",
+          paddingTop: "40px",
+          paddingBottom: "40px",
+          boxSizing: "border-box",
+        }}>
+          <nav className="loan-stepper customer-onboarding-stepper" aria-label="Customer onboarding steps">
             {wizardSteps.map((step, index) => {
               const Icon = step.icon;
               const isActive = index === currentStep;
@@ -1425,15 +1516,14 @@ export default function LoanApplicationPage() {
                 <button
                   key={step.id}
                   type="button"
-                  className={`loan-step customer-onboarding-step ${isActive ? 'active' : ''} ${
-                    isDone ? 'done' : ''
-                  }`}
+                  className={`loan-step customer-onboarding-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''
+                    }`}
                   onClick={() => navigateToStep(index)}
                   aria-current={isActive ? 'step' : undefined}
                   aria-label={`Step ${index + 1}: ${step.label}${isDone ? ', completed' : ''}`}
                 >
                   <span className="loan-step-bubble">
-                    <Icon size={16} aria-hidden="true" />
+                    <Icon size={14} aria-hidden="true" />
                   </span>
                   <span className="loan-step-text">{step.label}</span>
                 </button>
@@ -1452,17 +1542,14 @@ export default function LoanApplicationPage() {
           {/* Step 1: Personal Details */}
           {currentStep === 0 && (
             <div className="loan-form-section">
-              <h2>Applicant Details</h2>
-
               <div className="field-grid three-col">
                 <Field
                   label="Lead ID"
                   value={form.leadId}
                   onChange={(value) => updateField('leadId', value)}
-                  placeholder="Enter Lead ID"
                 />
 
-               
+
 
                 <Field
                   label="PAN Card *"
@@ -1470,18 +1557,16 @@ export default function LoanApplicationPage() {
                   onChange={(value) =>
                     updateField('panCard', normalizePan(value))
                   }
-                  placeholder="ABCDE1234F"
                   maxLength={10}
                   error={currentStepErrors.panCard}
                 />
-                 <Field
+                <Field
                   label="Branch"
                   value={form.branch}
                   onChange={(value) => updateField('branch', value)}
-                  placeholder="Enter Branch"
-                   maxLength={NAME_MAX_LENGTH}
-                   error={currentStepErrors.branch}
-                 />
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.branch}
+                />
               </div>
 
               <div className="field-grid name-four-col">
@@ -1497,7 +1582,6 @@ export default function LoanApplicationPage() {
                   label="First Name *"
                   value={form.fullName}
                   onChange={(value) => updateField('fullName', value)}
-                  placeholder="Enter First Name"
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.fullName}
                 />
@@ -1506,7 +1590,6 @@ export default function LoanApplicationPage() {
                   label="Middle Name"
                   value={form.middleName}
                   onChange={(value) => updateField('middleName', value)}
-                  placeholder="Enter Middle Name"
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.middleName}
                 />
@@ -1515,7 +1598,6 @@ export default function LoanApplicationPage() {
                   label="Last Name *"
                   value={form.lastName}
                   onChange={(value) => updateField('lastName', value)}
-                  placeholder="Enter Last Name"
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.lastName}
                 />
@@ -1539,6 +1621,7 @@ export default function LoanApplicationPage() {
                       calendarStartDate={getTodayInputDate()}
                       className="customer-onboarding-date-picker"
                       invalid={Boolean(currentStepErrors.dob)}
+                      emptyLabel=""
                       required
                     />
                   )}
@@ -1546,36 +1629,112 @@ export default function LoanApplicationPage() {
 
                 <Field
                   label="Age"
+                  className="customer-onboarding-compact-field"
                   value={form.age}
-                  onChange={() => {}}
-                  placeholder="Calculated from date of birth"
+                  onChange={() => { }}
                   readOnly
                 />
+              </div>
 
-                <Field
-                  label="Father's / Husband's Name *"
-                  value={form.fatherName}
-                  onChange={(value) => updateField('fatherName', value)}
-                  placeholder="Enter Father's / Husband's Name"
-                  maxLength={NAME_MAX_LENGTH}
-                  error={currentStepErrors.fatherName}
+              <div className="field-grid name-four-col">
+                <SelectField
+                  label="Title *"
+                  value={form.fatherTitle}
+                  onChange={(value) => updateField('fatherTitle', value)}
+                  options={TITLE_OPTIONS}
+                  error={currentStepErrors.fatherTitle}
                 />
-
                 <Field
-                  label="Mother's Name *"
-                  value={form.motherName}
-                  onChange={(value) => updateField('motherName', value)}
-                  placeholder="Enter Mother's Name"
+                  label="Father's / Husband's First Name *"
+                  value={form.fatherFirstName}
+                  onChange={(value) => updateField('fatherFirstName', value)}
                   maxLength={NAME_MAX_LENGTH}
-                  error={currentStepErrors.motherName}
+                  error={currentStepErrors.fatherFirstName}
                 />
+                <Field
+                  label="Father's / Husband's Middle Name"
+                  value={form.fatherMiddleName}
+                  onChange={(value) => updateField('fatherMiddleName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.fatherMiddleName}
+                />
+                <Field
+                  label="Father's / Husband's Last Name *"
+                  value={form.fatherLastName}
+                  onChange={(value) => updateField('fatherLastName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.fatherLastName}
+                />
+              </div>
 
+              <div className="field-grid name-four-col">
+                <SelectField
+                  label="Title *"
+                  value={form.motherTitle}
+                  onChange={(value) => updateField('motherTitle', value)}
+                  options={TITLE_OPTIONS}
+                  error={currentStepErrors.motherTitle}
+                />
+                <Field
+                  label="Mother's First Name *"
+                  value={form.motherFirstName}
+                  onChange={(value) => updateField('motherFirstName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.motherFirstName}
+                />
+                <Field
+                  label="Mother's Middle Name"
+                  value={form.motherMiddleName}
+                  onChange={(value) => updateField('motherMiddleName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.motherMiddleName}
+                />
+                <Field
+                  label="Mother's Last Name *"
+                  value={form.motherLastName}
+                  onChange={(value) => updateField('motherLastName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.motherLastName}
+                />
+              </div>
+
+              <div className="field-grid name-four-col">
+                <SelectField
+                  label={form.maritalStatus === 'Married' ? 'Title *' : 'Title'}
+                  value={form.spouseTitle}
+                  onChange={(value) => updateField('spouseTitle', value)}
+                  options={TITLE_OPTIONS}
+                  error={currentStepErrors.spouseTitle}
+                />
+                <Field
+                  label={form.maritalStatus === 'Married' ? "Spouse's First Name *" : "Spouse's First Name"}
+                  value={form.spouseFirstName}
+                  onChange={(value) => updateField('spouseFirstName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.spouseFirstName}
+                />
+                <Field
+                  label="Spouse's Middle Name"
+                  value={form.spouseMiddleName}
+                  onChange={(value) => updateField('spouseMiddleName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.spouseMiddleName}
+                />
+                <Field
+                  label={form.maritalStatus === 'Married' ? "Spouse's Last Name *" : "Spouse's Last Name"}
+                  value={form.spouseLastName}
+                  onChange={(value) => updateField('spouseLastName', value)}
+                  maxLength={NAME_MAX_LENGTH}
+                  error={currentStepErrors.spouseLastName}
+                />
+              </div>
+
+              <div className="field-grid two-col">
                 <Field
                   label="Email ID *"
                   type="email"
                   value={form.email}
                   onChange={(value) => updateField('email', value)}
-                  placeholder="Enter Email Address"
                   error={currentStepErrors.email}
                 />
 
@@ -1591,7 +1750,6 @@ export default function LoanApplicationPage() {
                   label="KYC Status"
                   value={form.kycStatus}
                   onChange={(value) => updateField('kycStatus', value)}
-                  placeholder="Enter KYC Status"
                 />
 
                 <Field
@@ -1603,7 +1761,6 @@ export default function LoanApplicationPage() {
                       value.replace(/\D/g, '').slice(0, 12)
                     )
                   }
-                  placeholder="Enter 12-digit Aadhaar Number"
                   inputMode="numeric"
                   maxLength={12}
                   error={currentStepErrors.aadhaarNumber}
@@ -1613,7 +1770,6 @@ export default function LoanApplicationPage() {
                   label="CKYC *"
                   value={form.kycRegn}
                   onChange={(value) => updateField('kycRegn', value)}
-                  placeholder="Enter CKYC Registration Number"
                   inputMode="numeric"
                   maxLength={14}
                   error={currentStepErrors.kycRegn}
@@ -1621,6 +1777,7 @@ export default function LoanApplicationPage() {
 
                 <SelectField
                   label="Gender *"
+                  className="customer-onboarding-compact-field"
                   value={form.gender}
                   onChange={(value) => updateField('gender', value)}
                   options={['Male', 'Female', 'Other']}
@@ -1636,7 +1793,6 @@ export default function LoanApplicationPage() {
                       value.replace(/\D/g, '').slice(0, 10)
                     )
                   }
-                  placeholder="Enter 10-digit Mobile Number"
                   inputMode="numeric"
                   maxLength={10}
                   error={currentStepErrors.mobileNo}
@@ -1651,7 +1807,6 @@ export default function LoanApplicationPage() {
                       value.replace(/\D/g, '').slice(0, 10)
                     )
                   }
-                  placeholder="Enter Alternate Contact Number"
                   inputMode="numeric"
                   maxLength={10}
                   error={currentStepErrors.alternateContact}
@@ -1661,7 +1816,6 @@ export default function LoanApplicationPage() {
                   label="Occupation"
                   value={form.occupation}
                   onChange={(value) => updateField('occupation', value)}
-                  placeholder="Enter Occupation"
                 />
               </div>
 
@@ -1680,8 +1834,6 @@ export default function LoanApplicationPage() {
           {/* Step 2: Address Details */}
           {currentStep === 1 && (
             <div className="loan-form-section">
-              <h2>Address Details</h2>
-
               <div className="field-grid two-col">
                 <SelectField
                   label="Residential Status *"
@@ -1714,7 +1866,6 @@ export default function LoanApplicationPage() {
                   onChange={(value) =>
                     updateField('flatBuildingName', value)
                   }
-                  placeholder="Enter Flat / Building Name"
                   error={currentStepErrors.flatBuildingName}
                 />
 
@@ -1722,7 +1873,6 @@ export default function LoanApplicationPage() {
                   label="Street / Road *"
                   value={form.streetRoad}
                   onChange={(value) => updateField('streetRoad', value)}
-                  placeholder="Enter Street / Road"
                   error={currentStepErrors.streetRoad}
                 />
 
@@ -1730,14 +1880,12 @@ export default function LoanApplicationPage() {
                   label="Landmark"
                   value={form.landMark}
                   onChange={(value) => updateField('landMark', value)}
-                  placeholder="Enter Landmark"
                 />
 
                 <Field
                   label="City *"
                   value={form.city}
                   onChange={(value) => updateField('city', value)}
-                  placeholder="Enter City"
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.city}
                 />
@@ -1782,7 +1930,6 @@ export default function LoanApplicationPage() {
                       value.replace(/\D/g, '').slice(0, 6)
                     )
                   }
-                  placeholder="Enter 6-digit PIN Code"
                   inputMode="numeric"
                   maxLength={6}
                   error={currentStepErrors.pinCode}
@@ -1795,8 +1942,6 @@ export default function LoanApplicationPage() {
           {/* Step 3: Employment Information */}
           {currentStep === 2 && (
             <div className="loan-form-section">
-              <h2>Employment Information</h2>
-
               <div className="field-grid three-col">
                 <SelectField
                   label="Employment Type *"
@@ -1813,7 +1958,6 @@ export default function LoanApplicationPage() {
                   label={`${form.employmentType === 'Self Employed' ? 'Nature of Business / Profession' : 'Designation'} *`}
                   value={form.designation}
                   onChange={(value) => updateField('designation', value)}
-                  placeholder={form.employmentType === 'Self Employed' ? 'Enter Nature of Business / Profession' : 'Enter Designation'}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.designation}
                 />
@@ -1822,7 +1966,6 @@ export default function LoanApplicationPage() {
                   label={`${form.employmentType === 'Self Employed' ? 'Business / Trade Name' : 'Employer Name'} *`}
                   value={form.employerName}
                   onChange={(value) => updateField('employerName', value)}
-                  placeholder={form.employmentType === 'Self Employed' ? 'Enter Business / Trade Name' : 'Enter Employer Name'}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.employerName}
                 />
@@ -1841,7 +1984,6 @@ export default function LoanApplicationPage() {
                   label="Qualification *"
                   value={form.qualification}
                   onChange={(value) => updateField('qualification', value)}
-                  placeholder="Enter Qualification"
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.qualification}
                 />
@@ -1851,7 +1993,6 @@ export default function LoanApplicationPage() {
                   type="email"
                   value={form.empEmailId}
                   onChange={(value) => updateField('empEmailId', value)}
-                  placeholder="Enter Employee Email ID"
                   error={currentStepErrors.empEmailId}
                 />
 
@@ -1859,7 +2000,6 @@ export default function LoanApplicationPage() {
                   label={form.employmentType === 'Self Employed' ? 'Business Location *' : 'Employer Location *'}
                   value={form.location}
                   onChange={(value) => updateField('location', value)}
-                  placeholder={form.employmentType === 'Self Employed' ? 'Enter Business Location' : 'Enter Employer Location'}
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.location}
                 />
@@ -1906,7 +2046,7 @@ export default function LoanApplicationPage() {
                     {form.previousEmployment.map((record, index) => {
                       const errorKey = (field) =>
                         currentStepErrors[
-                          `previousEmployment.${index}.${field}`
+                        `previousEmployment.${index}.${field}`
                         ];
 
                       return (
@@ -1923,7 +2063,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Type"
                               error={errorKey('employmentType')}
                             />
                           </td>
@@ -1940,7 +2079,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Employer"
                               error={errorKey('employerName')}
                             />
                           </td>
@@ -1957,7 +2095,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Designation"
                               error={errorKey('designation')}
                             />
                           </td>
@@ -1974,7 +2111,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Location"
                               error={errorKey('location')}
                             />
                           </td>
@@ -2081,8 +2217,6 @@ export default function LoanApplicationPage() {
           {/* Step 4: Income Details */}
           {currentStep === 3 && (
             <div className="loan-form-section">
-              <h2>Income Details</h2>
-
               <div className="field-grid two-col">
                 <Field
                   label="Annual Income *"
@@ -2091,7 +2225,6 @@ export default function LoanApplicationPage() {
                   step="0.01"
                   value={form.annualIncome}
                   onChange={(value) => updateField('annualIncome', value)}
-                  placeholder="Enter Annual Income"
                   inputMode="decimal"
                   error={currentStepErrors.annualIncome}
                 />
@@ -2110,7 +2243,6 @@ export default function LoanApplicationPage() {
                   label="Bank Name *"
                   value={form.bankName}
                   onChange={(value) => updateField('bankName', value)}
-                  placeholder="Enter Bank Name"
                   maxLength={NAME_MAX_LENGTH}
                   error={currentStepErrors.bankName}
                 />
@@ -2119,7 +2251,6 @@ export default function LoanApplicationPage() {
                   label="Bank Account Number *"
                   value={form.bankAccountNo}
                   onChange={(value) => updateField('bankAccountNo', value)}
-                  placeholder="Enter Bank Account Number"
                   inputMode="numeric"
                   maxLength={18}
                   error={currentStepErrors.bankAccountNo}
@@ -2168,7 +2299,7 @@ export default function LoanApplicationPage() {
                             }
                             error={
                               currentStepErrors[
-                                `taxReturns.${index}.grossIncome`
+                              `taxReturns.${index}.grossIncome`
                               ]
                             }
                           />
@@ -2190,7 +2321,7 @@ export default function LoanApplicationPage() {
                             }
                             error={
                               currentStepErrors[
-                                `taxReturns.${index}.tdsPaid`
+                              `taxReturns.${index}.tdsPaid`
                               ]
                             }
                           />
@@ -2206,7 +2337,6 @@ export default function LoanApplicationPage() {
           {/* Step 5: Document Details */}
           {currentStep === 4 && (
             <div className="loan-form-section">
-              <h2>Document Details</h2>
               <div className="loan-doc-category">
                 <SelectField
                   label="Loan Category *"
@@ -2261,7 +2391,6 @@ export default function LoanApplicationPage() {
                                 label="Document name"
                                 value={row.name}
                                 onChange={(value) => updateArrayItem('documents', index, 'name', value)}
-                                placeholder="Document Name"
                                 error={currentStepErrors[`documents.${index}.name`]}
                               />
                             )}
@@ -2317,7 +2446,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Add remark"
                               error={currentStepErrors[`documents.${index}.remarks`]}
                             />
                           </td>
@@ -2403,8 +2531,6 @@ export default function LoanApplicationPage() {
           {/* Step 6: Loan Details */}
           {currentStep === 5 && (
             <div className="loan-form-section">
-              <h2>Loan History</h2>
-
               <div className="loan-data-table-wrap">
                 <table className="loan-data-table">
                   <thead>
@@ -2441,7 +2567,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Bank Name"
                               error={errorKey('bankName')}
                             />
                           </td>
@@ -2458,7 +2583,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Account Number"
                               error={errorKey('accountNumber')}
                             />
                           </td>
@@ -2475,7 +2599,6 @@ export default function LoanApplicationPage() {
                                   value
                                 )
                               }
-                              placeholder="Type of Loan"
                               error={errorKey('loanType')}
                             />
                           </td>

@@ -27,11 +27,16 @@ const toCalendarDate = (value) => {
     : null;
 };
 
-const formatDate = (value) => toCalendarDate(value)?.toLocaleDateString('en-IN', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-}) || 'Select date';
+const formatDate = (value, emptyLabel) => {
+  const date = toCalendarDate(value);
+  return date
+    ? date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+    : emptyLabel;
+};
 
 const toInputDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
@@ -48,6 +53,7 @@ export default function LeadDatePicker({
   required = false,
   className = '',
   invalid = false,
+  emptyLabel = 'Select date',
 }) {
   const containerRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -88,7 +94,7 @@ export default function LeadDatePicker({
           disabled={disabled}
           onClick={() => setIsOpen((open) => !open)}
         >
-          <span className={value ? '' : 'dob-picker-placeholder'}>{formatDate(value)}</span>
+          <span className={value ? '' : 'dob-picker-placeholder'}>{formatDate(value, emptyLabel)}</span>
           <CalendarDays size={16} aria-hidden="true" />
         </button>
         {isOpen ? (
