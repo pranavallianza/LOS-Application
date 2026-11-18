@@ -1,23 +1,22 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CirclePlus, RotateCcw, Trash2 } from 'lucide-react';
+import { CirclePlus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import { persistRetailLoanApplication } from '../../components/RetailLoanApplicationForm';
 import { assessLoanEligibility } from '../../services/loanEligibility';
+import { getAllLeads } from '../../services/lead_management';
 
 const POLICY = {
   maxFoir: 50,
+  reviewFoir: 40,
   cibilFloor: 650,
   maxHomeLtv: {
     upTo30L: 90,
     upTo75L: 80,
     above75L: 75
-  },
-  minTenureMonths: 6,
-  maxTenureMonths: 480,
-  maxAnnualInterestRate: 60
+  }
 };
 
 const LOAN_PRODUCTS = [
@@ -29,8 +28,7 @@ const LOAN_PRODUCTS = [
   'Other secured loan'
 ];
 
-const APPLICANT_NAME_PATTERN = /^[\p{L}\p{M}]+(?:[ '-][\p{L}\p{M}]+)*$/u;
-const DECIMAL_AMOUNT_PATTERN = /^\d+(?:\.\d{1,2})?$/;
+const MAX_FINANCIAL_ROWS = 10;
 
 export function isSecuredProduct(productName) {
   return /home|vehicle|gold|secured/i.test(productName);
@@ -52,8 +50,8 @@ const initialForm = () => ({
   securityValue: '',
   tenureMonths: '',
   cibilScore: '',
-  existingMonthlyDebt: '',
-  rows: [makeRow(1, 'Income'), makeRow(2, 'Expense')]
+  existingMonthlyDebt: '0',
+  rows: [makeRow(1, 'Income')]
 });
 
 const numberValue = value => {
@@ -61,6 +59,43 @@ const numberValue = value => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
+
+const leadValue = (lead, ...fields) => {
+  for (const field of fields) {
+    const value = lead?.[field];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return '';
+};
+
+function getLeadName(lead) {
+  const personNameParts = [
+    leadValue(lead, 'firstName', 'first_name'),
+    leadValue(lead, 'middleName', 'middle_name'),
+    leadValue(lead, 'lastName', 'last_name')
+  ].filter(Boolean);
+  const prefix = leadValue(lead, 'namePrefix', 'name_prefix', 'title');
+  return personNameParts.length
+    ? [prefix, ...personNameParts].filter(Boolean).join(' ')
+    : String(leadValue(lead, 'customerName', 'customer_name', 'name', 'applicantName', 'applicant_name') || '');
+}
+
+function getLeadId(lead) {
+  return String(leadValue(lead, 'leadId', 'lead_id', 'id', '_id'));
+}
+
+function getLeadProduct(lead) {
+  const value = String(leadValue(lead, 'loanProductType', 'loan_product_type', 'product', 'productName', 'product_name') || '').trim();
+  const exactMatch = LOAN_PRODUCTS.find(product => product.toLowerCase() === value.toLowerCase());
+  if (exactMatch) return exactMatch;
+  if (/personal/i.test(value)) return 'Personal loan';
+  if (/home/i.test(value)) return 'Home loan';
+  if (/vehicle|car|auto/i.test(value)) return 'Vehicle loan';
+  if (/business/i.test(value)) return 'Business loan';
+  if (/gold/i.test(value)) return 'Gold loan';
+  if (/secured/i.test(value)) return 'Other secured loan';
+  return '';
+}
 
 const money = value => (
   Number.isFinite(value)
@@ -188,132 +223,28 @@ export function calculateAssessment(form) {
 export function validate(form) {
   const errors = {};
 
-  const leadId = String(form.leadId ?? '').trim();
-  const applicantName = String(form.applicantName ?? '').trim();
-  const productName = String(form.productName ?? '').trim();
-
-  if (!/^[A-Z0-9-]{1,30}$/i.test(leadId)) {
-    errors.leadId = 'Enter a valid Lead ID.';
-  }
-  const applicantNameLength = Array.from(applicantName).length;
-  if (!applicantName) {
-    errors.applicantName = 'Applicant name is required.';
-  } else if (applicantNameLength < 2 || applicantNameLength > 100) {
-    errors.applicantName = 'Applicant name must be between 2 and 100 characters.';
-  } else if (!APPLICANT_NAME_PATTERN.test(applicantName)) {
-    errors.applicantName = 'Use letters only. Spaces, apostrophes, and hyphens are allowed.';
-  }
-  if (!LOAN_PRODUCTS.includes(productName)) {
-    errors.productName = 'Select a valid loan product.';
-  }
-
-  const requiredAmounts = [
-    ['requestedAmount', 'Enter a loan amount greater than zero.'],
-    ['annualInterestRate', 'Enter a valid annual interest rate.'],
-    ['tenureMonths', 'Enter a valid tenure in months.'],
-    ['cibilScore', 'Enter a valid CIBIL score.']
+  const requiredFields = [
+    ['leadId', 'Lead ID is required.'],
+    ['applicantName', 'Applicant name is required.'],
+    ['productName', 'Loan product is required.'],
+    ['requestedAmount', 'Loan amount is required.'],
+    ['annualInterestRate', 'Interest rate is required.'],
+    ['tenureMonths', 'Tenure is required.'],
+    ['cibilScore', 'CIBIL score is required.'],
+    ['existingMonthlyDebt', 'Enter existing monthly debt, or 0 if you have none.']
   ];
-  requiredAmounts.forEach(([field, message]) => {
-    const value = form[field];
-    const parsedValue = numberValue(value);
-    if (
-      String(value ?? '').trim() === '' ||
-      !DECIMAL_AMOUNT_PATTERN.test(String(value)) ||
-      parsedValue === null ||
-      !Number.isFinite(parsedValue)
-    ) {
-      errors[field] = message;
-    }
+  requiredFields.forEach(([field, message]) => {
+    if (!String(form[field] ?? '').trim()) errors[field] = message;
   });
 
-  const requestedAmount = numberValue(form.requestedAmount);
-  if (requestedAmount !== null && requestedAmount <= 0) {
-    errors.requestedAmount = 'Enter a loan amount greater than zero.';
-  }
-  const annualInterestRate = numberValue(form.annualInterestRate);
-  if (
-    annualInterestRate !== null &&
-    (
-      annualInterestRate <= 0 ||
-      annualInterestRate > POLICY.maxAnnualInterestRate
-    )
-  ) {
-    errors.annualInterestRate = `Enter a rate above 0% and no more than ${POLICY.maxAnnualInterestRate}%.`;
-  }
-  const existingMonthlyDebt = String(form.existingMonthlyDebt ?? '').trim();
-  const parsedExistingMonthlyDebt = numberValue(existingMonthlyDebt);
-  if (
-    existingMonthlyDebt !== '' &&
-    (
-      !DECIMAL_AMOUNT_PATTERN.test(existingMonthlyDebt) ||
-      parsedExistingMonthlyDebt === null ||
-      !Number.isFinite(parsedExistingMonthlyDebt) ||
-      parsedExistingMonthlyDebt < 0
-    )
-  ) {
-    errors.existingMonthlyDebt = 'Enter zero or a valid non-negative monthly debt amount.';
-  }
-  const securityValue = String(form.securityValue ?? '').trim();
-  const parsedSecurityValue = numberValue(securityValue);
-  if (
-    securityValue !== '' &&
-    (
-      !DECIMAL_AMOUNT_PATTERN.test(securityValue) ||
-      parsedSecurityValue === null ||
-      !Number.isFinite(parsedSecurityValue) ||
-      parsedSecurityValue <= 0
-    )
-  ) {
-    errors.securityValue = 'Enter a valid security value or leave it blank.';
-  }
-  const tenureMonths = String(form.tenureMonths ?? '').trim();
-  const parsedTenureMonths = numberValue(tenureMonths);
-  if (
-    !/^\d+$/.test(tenureMonths) ||
-    parsedTenureMonths === null ||
-    !Number.isFinite(parsedTenureMonths) ||
-    parsedTenureMonths < POLICY.minTenureMonths ||
-    parsedTenureMonths > POLICY.maxTenureMonths
-  ) {
-    errors.tenureMonths = `Choose a tenure between ${POLICY.minTenureMonths} and ${POLICY.maxTenureMonths} months.`;
-  }
-  const cibilScore = String(form.cibilScore ?? '').trim();
-  const parsedCibilScore = numberValue(cibilScore);
-  if (
-    !/^\d{3}$/.test(cibilScore) ||
-    parsedCibilScore === null ||
-    !Number.isFinite(parsedCibilScore) ||
-    parsedCibilScore < 300 ||
-    parsedCibilScore > 900
-  ) {
-    errors.cibilScore = 'CIBIL score must be between 300 and 900.';
-  }
-
   const rows = Array.isArray(form.rows) ? form.rows : [];
-  if (!rows.some(row => row.type === 'Income' && numberValue(row.amount) > 0)) {
-    errors.income = 'Enter at least one positive income amount.';
-  }
+  if (!rows.some(row => row.type === 'Income')) errors.income = 'Add at least one income entry.';
   rows.forEach(row => {
     const source = String(row.source ?? '').trim();
     const amount = String(row.amount ?? '').trim();
-    if (!source && !amount) return;
-    if (!['Income', 'Expense'].includes(row.type)) {
-      errors[`row-${row.id}-type`] = 'Select income or expense.';
-    }
-    if (!source) {
-      errors[`row-${row.id}-source`] = 'Enter a source.';
-    } else if (Array.from(source).length > 100 || /[\u0000-\u001F\u007F]/.test(source)) {
-      errors[`row-${row.id}-source`] = 'Source must be 100 characters or fewer and contain no control characters.';
-    }
-    if (
-      amount === '' ||
-      !DECIMAL_AMOUNT_PATTERN.test(amount) ||
-      numberValue(amount) === null ||
-      !Number.isFinite(numberValue(amount)) ||
-      numberValue(amount) < 0
-    ) {
-      errors[`row-${row.id}-amount`] = 'Enter a non-negative amount.';
-    }
+    if (!String(row.type ?? '').trim()) errors[`row-${row.id}-type`] = 'Entry type is required.';
+    if (!source) errors[`row-${row.id}-source`] = 'Source is required.';
+    if (!amount) errors[`row-${row.id}-amount`] = 'Amount is required.';
   });
 
   return errors;
@@ -363,22 +294,123 @@ export default function LoanEligibilityPage() {
   const [assessment, setAssessment] = useState(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
+  const [leads, setLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadPickerError, setLeadPickerError] = useState('');
 
-  const calculated = useMemo(() => calculateAssessment(form), [form]);
   const securedProduct = isSecuredProduct(form.productName);
-  const hasCibil = Number.isFinite(calculated.cibilScore);
-  const hasLtvLimit = Number.isFinite(calculated.ltvLimit);
-  const cibilAction = hasCibil
-    ? calculated.cibilScore >= POLICY.cibilFloor ? 'Within limit' : 'Outside limit'
-    : 'Enter details';
-  const ltvAction = !Number.isFinite(calculated.ltv)
-    ? 'Optional'
+  const hasLtvLimit = Number.isFinite(assessment?.ltvLimit);
+  const cibilAction = !assessment
+    ? 'Pending'
+    : assessment.cibilScore >= POLICY.cibilFloor ? 'Within limit' : 'Outside limit';
+  const ltvAction = !assessment
+    ? 'Pending'
+    : !Number.isFinite(assessment.ltv)
+      ? 'Optional'
     : hasLtvLimit
-      ? actionFor(calculated.ltv, calculated.ltvLimit - 5, calculated.ltvLimit)
+      ? actionFor(assessment.ltv, assessment.ltvLimit - 5, assessment.ltvLimit)
       : 'Calculated';
   const decision = assessment
     ? assessment.decision
-    : 'Not checked';
+    : 'Assessment pending';
+
+  async function openLeadPicker() {
+    setLeadPickerOpen(true);
+    setLeadSearch('');
+    setLeadPickerError('');
+    setLeadsLoading(true);
+    try {
+      setLeads(await getAllLeads());
+    } catch (error) {
+      setLeadPickerError(error instanceof Error ? error.message : 'Unable to load leads.');
+      setLeads([]);
+    } finally {
+      setLeadsLoading(false);
+    }
+  }
+
+  function selectLead(lead) {
+    const applicantName = getLeadName(lead).trim();
+    const productName = getLeadProduct(lead);
+    const nextValues = {
+      leadId: getLeadId(lead),
+      ...(applicantName ? { applicantName } : {}),
+      ...(productName ? { productName } : {})
+    };
+    const requestedAmount = leadValue(lead, 'loanAmount', 'loan_amount', 'requestedAmount', 'requested_amount', 'amount');
+    const annualInterestRate = leadValue(lead, 'annualInterestRate', 'annual_interest_rate', 'interestRate', 'interest_rate');
+    let tenureMonths = leadValue(lead, 'tenureMonths', 'tenure_months', 'loanTenureMonths', 'loan_tenure_months');
+    if (tenureMonths === '') {
+      const tenure = Number(leadValue(lead, 'tenure'));
+      const tenureUnit = String(leadValue(lead, 'tenureUnit', 'tenure_unit') || 'month').toLowerCase();
+      const multiplier = /year/.test(tenureUnit) ? 12 : /quarter/.test(tenureUnit) ? 3 : 1;
+      if (Number.isFinite(tenure) && tenure > 0 && Number.isInteger(tenure * multiplier)) {
+        tenureMonths = String(tenure * multiplier);
+      }
+    }
+    const securityValue = leadValue(lead, 'securityValue', 'security_value', 'collateral', 'securityAmount', 'security_amount');
+    const existingMonthlyDebt = leadValue(lead, 'existingMonthlyDebt', 'existing_monthly_debt', 'monthlyEmi', 'monthly_emi');
+    const cibilScore = leadValue(lead, 'cibilScore', 'cibil_score');
+    const incomeSource = String(leadValue(lead, 'incomeSource', 'income_source') || '').trim();
+    const monthlyIncome = leadValue(lead, 'grossMonthlyIncome', 'gross_monthly_income', 'monthlyIncome', 'monthly_income');
+    const annualIncome = leadValue(lead, 'annualIncome', 'annual_income');
+    const takeHomePay = leadValue(lead, 'takeHomePay', 'take_home_pay');
+    const parsedMonthlyIncome = monthlyIncome !== ''
+      ? Number(String(monthlyIncome).replace(/,/g, ''))
+      : annualIncome !== ''
+        ? Number(String(annualIncome).replace(/,/g, '')) / 12
+        : Number(String(takeHomePay).replace(/,/g, ''));
+    const importedIncome = Number.isFinite(parsedMonthlyIncome) && parsedMonthlyIncome > 0
+      ? { source: incomeSource || 'Monthly income', amount: parsedMonthlyIncome.toFixed(2) }
+      : null;
+
+    [
+      ['requestedAmount', requestedAmount],
+      ['annualInterestRate', annualInterestRate],
+      ['tenureMonths', tenureMonths],
+      ['securityValue', securityValue],
+      ['existingMonthlyDebt', existingMonthlyDebt],
+      ['cibilScore', cibilScore]
+    ].forEach(([field, value]) => {
+      if (value !== '') nextValues[field] = String(value).replace(/,/g, '').trim();
+    });
+
+    setForm(current => {
+      let rows = current.rows;
+      if (importedIncome && !rows.some(row =>
+        row.type === 'Income' &&
+        row.source.trim().toLowerCase() === importedIncome.source.toLowerCase()
+      )) {
+        const emptyIncomeRow = rows.find(row =>
+          row.type === 'Income' && !row.source.trim() && !row.amount.trim()
+        );
+        if (emptyIncomeRow) {
+          rows = rows.map(row => row.id === emptyIncomeRow.id
+            ? { ...row, ...importedIncome }
+            : row);
+        } else if (rows.length < MAX_FINANCIAL_ROWS) {
+          rows = [...rows, {
+            ...makeRow(Math.max(0, ...rows.map(row => row.id)) + 1),
+            ...importedIncome
+          }];
+        }
+      }
+      return { ...current, ...nextValues, rows };
+    });
+    setErrors(current => Object.fromEntries(
+      Object.entries(current).map(([field, message]) => [
+        field,
+        Object.prototype.hasOwnProperty.call(nextValues, field) || /^row-\d+-(source|amount|type)$/.test(field) || field === 'income'
+          ? ''
+          : message
+      ])
+    ));
+    setAssessment(null);
+    setFormError('');
+    setLeadPickerOpen(false);
+  }
 
   function update(field, value) {
     setForm(current => ({ ...current, [field]: value }));
@@ -396,21 +428,32 @@ export default function LoanEligibilityPage() {
       ...current,
       rows: current.rows.map(row => row.id === id ? { ...row, [field]: value } : row)
     }));
-    setErrors(current => ({
-      ...current,
-      [`row-${id}-source`]: '',
-      [`row-${id}-amount`]: '',
-      income: ''
-    }));
+    setErrors(current => {
+      const sourceErrors = field === 'source' || field === 'type'
+        ? Object.fromEntries(form.rows.map(row => [`row-${row.id}-source`, '']))
+        : {};
+      return {
+        ...current,
+        ...sourceErrors,
+        [`row-${id}-source`]: '',
+        [`row-${id}-amount`]: '',
+        [`row-${id}-type`]: '',
+        income: ''
+      };
+    });
     setAssessment(null);
     setFormError('');
   }
 
   function addRow() {
-    setForm(current => ({
-      ...current,
-      rows: [...current.rows, makeRow(Math.max(0, ...current.rows.map(row => row.id)) + 1)]
-    }));
+    setForm(current => {
+      if (current.rows.length >= MAX_FINANCIAL_ROWS) return current;
+      return {
+        ...current,
+        rows: [...current.rows, makeRow(Math.max(0, ...current.rows.map(row => row.id)) + 1)]
+      };
+    });
+    setErrors(current => ({ ...current, rows: '' }));
     setAssessment(null);
     setFormError('');
   }
@@ -422,8 +465,10 @@ export default function LoanEligibilityPage() {
     }));
     setErrors(current => ({
       ...current,
+      ...Object.fromEntries(form.rows.map(row => [`row-${row.id}-source`, ''])),
       [`row-${id}-source`]: '',
       [`row-${id}-amount`]: '',
+      rows: '',
       income: ''
     }));
     setAssessment(null);
@@ -441,6 +486,7 @@ export default function LoanEligibilityPage() {
       setAssessment(null);
       return;
     }
+    if (!window.confirm('Submit this eligibility assessment for calculation?')) return;
 
     const result = calculateAssessment(form);
     const reasons = [];
@@ -451,11 +497,23 @@ export default function LoanEligibilityPage() {
       reasons.push('The entered income and expenses do not support an eligible loan amount.');
     }
 
-    let resultDecision = 'In-principle eligible';
-    if (reasons.length) {
-      resultDecision = 'Not eligible — screening criteria not met';
-    } else if (result.eligibleAmount < numberValue(form.requestedAmount)) {
-      resultDecision = 'Eligible for a reduced amount';
+    const reviewReasons = [];
+    if (result.foir > POLICY.reviewFoir && result.foir <= POLICY.maxFoir) {
+      reviewReasons.push(`FOIR is above ${POLICY.reviewFoir}% and requires a manual review.`);
+    }
+    if (result.dti > POLICY.reviewFoir && result.dti <= POLICY.maxFoir) {
+      reviewReasons.push(`DTI is above ${POLICY.reviewFoir}% and requires a manual review.`);
+    }
+    if (
+      result.ltv !== null &&
+      result.ltvLimit !== null &&
+      result.ltv > result.ltvLimit - 5 &&
+      result.ltv <= result.ltvLimit
+    ) {
+      reviewReasons.push('LTV is close to the indicative limit and requires a manual review.');
+    }
+    if (result.eligibleAmount > 0 && result.eligibleAmount < numberValue(form.requestedAmount)) {
+      reviewReasons.push('The requested amount is higher than the indicative eligible amount.');
     }
 
     setSaving(true);
@@ -496,24 +554,54 @@ export default function LoanEligibilityPage() {
       const remoteEligibleAmount = numberValue(
         remote?.eligible_amount ?? remote?.eligibleAmount ?? remote?.max_eligible_amount
       );
-      let finalDecision = resultDecision;
+      let finalDecision = reasons.length
+        ? 'Not Eligible'
+        : reviewReasons.length
+          ? 'Refer for Review'
+          : 'Eligible';
       let finalReasons = reasons;
       let finalEligibleAmount = result.eligibleAmount;
 
-      if (typeof remoteDecision === 'boolean') {
-        finalDecision = remoteDecision ? 'In-principle eligible' : 'Not eligible — lender assessment';
-        finalReasons = remoteDecision ? [] : [remote?.message || 'The lender assessment did not approve this application.'];
-      } else if (typeof remoteDecision === 'string') {
-        finalDecision = remoteDecision;
-        if (/not eligible|ineligible|reject|declin|outside|review|pending/i.test(remoteDecision)) {
-          finalReasons = [remote?.message || 'The lender assessment did not approve this application.'];
-        } else {
-          finalReasons = [];
-        }
-      }
-
       if (remoteEligibleAmount !== null && remoteEligibleAmount >= 0) {
         finalEligibleAmount = remoteEligibleAmount;
+      }
+
+      const reducedAmount = finalEligibleAmount > 0 &&
+        finalEligibleAmount < numberValue(form.requestedAmount);
+      if (remoteDecision === false) {
+        finalDecision = 'Not Eligible';
+        finalReasons = [remote?.message || 'The lender assessment did not approve this application.'];
+      } else if (remoteDecision === true) {
+        finalDecision = finalEligibleAmount <= 0
+          ? 'Not Eligible'
+          : reducedAmount || reviewReasons.length
+            ? 'Refer for Review'
+            : 'Eligible';
+        finalReasons = finalEligibleAmount <= 0
+          ? ['The lender assessment returned no eligible loan amount.']
+          : reviewReasons;
+      } else if (typeof remoteDecision === 'string') {
+        if (/not eligible|ineligible|reject|declin|outside/i.test(remoteDecision)) {
+          finalDecision = 'Not Eligible';
+          finalReasons = [remote?.message || 'The lender assessment did not approve this application.'];
+        } else if (/refer|review|pending/i.test(remoteDecision)) {
+          finalDecision = 'Refer for Review';
+          finalReasons = [remote?.message || 'The lender assessment requires a manual review.'];
+        } else if (/eligible|approve|accept/i.test(remoteDecision)) {
+          finalDecision = finalEligibleAmount <= 0
+            ? 'Not Eligible'
+            : reducedAmount || reviewReasons.length
+              ? 'Refer for Review'
+              : 'Eligible';
+          finalReasons = finalEligibleAmount <= 0
+            ? ['The lender assessment returned no eligible loan amount.']
+            : reviewReasons;
+        } else {
+          finalDecision = 'Refer for Review';
+          finalReasons = [remote?.message || 'The lender returned a result that requires manual review.'];
+        }
+      } else if (!reasons.length) {
+        finalReasons = reviewReasons;
       }
 
       const finalEligibleEmi = finalEligibleAmount > 0
@@ -523,8 +611,6 @@ export default function LoanEligibilityPage() {
           numberValue(form.tenureMonths)
         )
         : 0;
-      const decisionNeedsReview = /not eligible|ineligible|reject|declin|outside|review|pending/i
-        .test(finalDecision);
 
       setAssessment({
         ...result,
@@ -532,7 +618,7 @@ export default function LoanEligibilityPage() {
         eligibleEmi: finalEligibleEmi,
         decision: finalDecision,
         reasons: finalReasons,
-        isEligible: finalReasons.length === 0 && !decisionNeedsReview && finalEligibleAmount > 0
+        isEligible: finalDecision === 'Eligible' && finalEligibleAmount > 0
       });
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Unable to assess eligibility.');
@@ -592,6 +678,7 @@ export default function LoanEligibilityPage() {
   }
 
   function reset() {
+    if (!window.confirm('Cancel this eligibility assessment? All entered details and results will be cleared.')) return;
     setForm(initialForm());
     setErrors({});
     setAssessment(null);
@@ -603,6 +690,11 @@ export default function LoanEligibilityPage() {
     result[row.type] += amount;
     return result;
   }, { Income: 0, Expense: 0 });
+  const filteredLeads = leads.filter(lead => (
+    `${getLeadId(lead)} ${getLeadName(lead)} ${getLeadProduct(lead)}`
+      .toLowerCase()
+      .includes(leadSearch.trim().toLowerCase())
+  ));
 
   return (
     <AppShell title="Loan Eligibility">
@@ -610,7 +702,15 @@ export default function LoanEligibilityPage() {
       <div className="eligibility-page">
         <header className="eligibility-heading">
           <h1 className="eligibility-title">Loan Eligibility</h1>
-          <output className={`eligibility-status ${assessment?.isEligible ? 'checked' : assessment ? 'rejected' : ''}`}>
+          <output className={`eligibility-status ${
+            !assessment
+              ? 'pending'
+              : assessment.isEligible
+                ? 'checked'
+                : assessment.decision === 'Refer for Review'
+                  ? 'review'
+                  : 'rejected'
+          }`}>
             {decision}
           </output>
         </header>
@@ -622,21 +722,35 @@ export default function LoanEligibilityPage() {
                 <section className="form-panel">
                   <h2>Applicant</h2>
                   <div className="eligibility-fields applicant-fields">
-                    <Field
-                      label="Lead ID *"
-                      value={form.leadId}
-                      onChange={value => update('leadId', value)}
-                      error={errors.leadId}
-                      required
-                      maxLength={30}
-                    />
+                    <label className="eligibility-field lead-id-field" htmlFor="eligibility-lead-id">
+                      <span>Lead ID *</span>
+                      <div className="lead-id-control">
+                        <input
+                          id="eligibility-lead-id"
+                          value={form.leadId}
+                          onChange={event => update('leadId', event.target.value)}
+                          required
+                          aria-invalid={Boolean(errors.leadId)}
+                          aria-describedby={errors.leadId ? 'eligibility-lead-id-error' : undefined}
+                        />
+                        <button
+                          className="lead-search-button"
+                          type="button"
+                          onClick={openLeadPicker}
+                          aria-label="Search leads"
+                          title="Search leads"
+                        >
+                          <Search size={17} />
+                        </button>
+                      </div>
+                      {errors.leadId && <small className="field-error" id="eligibility-lead-id-error">{errors.leadId}</small>}
+                    </label>
                     <Field
                       label="Name of the Applicant *"
                       value={form.applicantName}
                       onChange={value => update('applicantName', value)}
                       error={errors.applicantName}
                       required
-                      maxLength={100}
                       autoComplete="name"
                     />
                   </div>
@@ -696,11 +810,13 @@ export default function LoanEligibilityPage() {
                       inputMode="decimal"
                     />
                     <Field
-                      label="Existing Monthly Debt (Rs.)"
+                      label="Existing Monthly Debt (Rs.) *"
                       value={form.existingMonthlyDebt}
                       onChange={value => update('existingMonthlyDebt', value)}
                       error={errors.existingMonthlyDebt}
                       inputMode="decimal"
+                      required
+                      helpText="Enter total monthly repayments for existing loans. Keep 0 only if you have no existing debt."
                     />
                   </div>
                 </section>
@@ -708,18 +824,31 @@ export default function LoanEligibilityPage() {
                 <section className="form-panel income-panel">
                   <div className="panel-heading">
                     <h2>Income and expenses</h2>
-                    <button className="add-row" type="button" onClick={addRow}>
-                      <CirclePlus size={15} /> Add row
+                    <button
+                      className="add-row"
+                      type="button"
+                      onClick={addRow}
+                      disabled={form.rows.length >= MAX_FINANCIAL_ROWS}
+                    >
+                      <CirclePlus size={15} /> Add entry
                     </button>
                   </div>
+                  <p className="table-help">
+                    Add up to {MAX_FINANCIAL_ROWS} income or expense entries. Complete the required source and amount fields.
+                    <span className="row-count">
+                      {form.rows.length >= MAX_FINANCIAL_ROWS
+                        ? `Maximum ${MAX_FINANCIAL_ROWS} reached`
+                        : `${form.rows.length}/${MAX_FINANCIAL_ROWS} entries`}
+                    </span>
+                  </p>
                   <div className="table-scroll">
                     <table className="eligibility-table income-table">
                       <thead>
                         <tr>
                           <th>Type</th>
-                          <th>Source</th>
-                          <th>Income Rs.</th>
-                          <th>Expense Rs.</th>
+                          <th>Income / Expense Source</th>
+                          <th>Income Amount (Rs.)</th>
+                          <th>Expense Amount (Rs.)</th>
                           <th aria-label="Actions" />
                         </tr>
                       </thead>
@@ -731,6 +860,8 @@ export default function LoanEligibilityPage() {
                                 aria-label={`Type for row ${row.id}`}
                                 value={row.type}
                                 onChange={event => updateRow(row.id, 'type', event.target.value)}
+                                required
+                                aria-invalid={Boolean(errors[`row-${row.id}-type`])}
                               >
                                 <option>Income</option>
                                 <option>Expense</option>
@@ -738,28 +869,40 @@ export default function LoanEligibilityPage() {
                             </td>
                             <td>
                               <input
-                                aria-label={`Source for row ${row.id}`}
+                                id={`row-${row.id}-source`}
+                                aria-label={`${row.type} source for row ${row.id}`}
                                 value={row.source}
                                 onChange={event => updateRow(row.id, 'source', event.target.value)}
-                                maxLength={100}
+                                required
+                                placeholder={row.type === 'Income' ? 'e.g. Salary' : 'e.g. Rent'}
                                 aria-invalid={Boolean(errors[`row-${row.id}-source`])}
+                                aria-describedby={errors[`row-${row.id}-source`] ? `row-${row.id}-source-error` : undefined}
                               />
                               {errors[`row-${row.id}-source`] && (
-                                <small className="table-field-error">{errors[`row-${row.id}-source`]}</small>
+                                <small className="table-field-error" id={`row-${row.id}-source-error`}>
+                                  {errors[`row-${row.id}-source`]}
+                                </small>
                               )}
                             </td>
                             <td>
                               {row.type === 'Income' && (
                                 <>
                                   <input
+                                    id={`row-${row.id}-amount`}
                                     aria-label={`Income amount for row ${row.id}`}
                                     value={row.amount}
                                     onChange={event => updateRow(row.id, 'amount', event.target.value)}
+                                    type="number"
                                     inputMode="decimal"
+                                    step="any"
+                                    required
                                     aria-invalid={Boolean(errors[`row-${row.id}-amount`])}
+                                    aria-describedby={errors[`row-${row.id}-amount`] ? `row-${row.id}-amount-error` : undefined}
                                   />
                                   {errors[`row-${row.id}-amount`] && (
-                                    <small className="table-field-error">{errors[`row-${row.id}-amount`]}</small>
+                                    <small className="table-field-error" id={`row-${row.id}-amount-error`}>
+                                      {errors[`row-${row.id}-amount`]}
+                                    </small>
                                   )}
                                 </>
                               )}
@@ -768,14 +911,21 @@ export default function LoanEligibilityPage() {
                               {row.type === 'Expense' && (
                                 <>
                                   <input
+                                    id={`row-${row.id}-amount`}
                                     aria-label={`Expense amount for row ${row.id}`}
                                     value={row.amount}
                                     onChange={event => updateRow(row.id, 'amount', event.target.value)}
+                                    type="number"
                                     inputMode="decimal"
+                                    step="any"
+                                    required
                                     aria-invalid={Boolean(errors[`row-${row.id}-amount`])}
+                                    aria-describedby={errors[`row-${row.id}-amount`] ? `row-${row.id}-amount-error` : undefined}
                                   />
                                   {errors[`row-${row.id}-amount`] && (
-                                    <small className="table-field-error">{errors[`row-${row.id}-amount`]}</small>
+                                    <small className="table-field-error" id={`row-${row.id}-amount-error`}>
+                                      {errors[`row-${row.id}-amount`]}
+                                    </small>
                                   )}
                                 </>
                               )}
@@ -807,50 +957,62 @@ export default function LoanEligibilityPage() {
 
               <aside className="assessment-panel">
                 <h2>Assessment</h2>
-                <div className="eligibility-results">
+                <div className={`eligibility-results ${assessment ? 'calculated' : 'pending'}`}>
                   <ResultField
-                    label="Loan Eligible (Rs.)"
-                    value={assessment?.isEligible ? money(assessment.eligibleAmount) : '—'}
+                    label="Indicative eligible amount (Rs.)"
+                    value={assessment ? money(assessment.eligibleAmount) : 'Pending'}
                   />
-                  <ResultField label="Interest (%)" value={form.annualInterestRate || '—'} />
-                  <ResultField label="Tenure (mo)" value={form.tenureMonths || '—'} />
+                  <ResultField label="Interest (%)" value={assessment ? `${form.annualInterestRate}%` : 'Pending'} />
+                  <ResultField label="Tenure (mo)" value={assessment ? form.tenureMonths : 'Pending'} />
                   <ResultField
                     label="EMI (Rs.)"
-                    value={assessment?.isEligible ? money(assessment.eligibleEmi) : '—'}
+                    value={assessment ? money(assessment.eligibleEmi) : 'Pending'}
                   />
                 </div>
+                <p className={`assessment-state ${assessment ? 'calculated' : ''}`} role="status">
+                  {assessment ? 'Values calculated from the submitted details.' : 'Results are pending assessment.'}
+                </p>
 
                 <div className="table-scroll ratio-scroll">
                   <table className="eligibility-table ratio-table">
                     <thead>
-                      <tr><th>Assessment</th><th>Result</th><th aria-label="Status" /></tr>
+                      <tr><th>Financial ratio</th><th>Result</th><th>Status</th></tr>
                     </thead>
                     <tbody>
                       <tr>
-                        <th scope="row">FOIR</th>
-                        <td>{percent(calculated.foir)}</td>
-                        <td>{actionFor(calculated.foir, 40, POLICY.maxFoir)}</td>
+                        <th scope="row" title="Fixed Obligation to Income Ratio: existing monthly debt plus proposed EMI divided by monthly income after regular expenses.">
+                          FOIR <span className="ratio-description">Debt + proposed EMI ÷ net income</span>
+                        </th>
+                        <td>{assessment ? percent(assessment.foir) : 'Pending'}</td>
+                        <td>{assessment ? actionFor(assessment.foir, POLICY.reviewFoir, POLICY.maxFoir) : 'Pending'}</td>
                       </tr>
                       <tr>
-                        <th scope="row">DTI</th>
-                        <td>{percent(calculated.dti)}</td>
-                        <td>{actionFor(calculated.dti, 40, POLICY.maxFoir)}</td>
+                        <th scope="row" title="Debt-to-Income Ratio: existing monthly debt plus proposed EMI divided by gross monthly income.">
+                          DTI <span className="ratio-description">Debt + proposed EMI ÷ gross income</span>
+                        </th>
+                        <td>{assessment ? percent(assessment.dti) : 'Pending'}</td>
+                        <td>{assessment ? actionFor(assessment.dti, POLICY.reviewFoir, POLICY.maxFoir) : 'Pending'}</td>
                       </tr>
                       <tr>
-                        <th scope="row">LTV</th>
-                        <td>{percent(calculated.ltv)}</td>
-                        <td>{calculated.ltv === null ? 'Optional' : ltvAction}</td>
+                        <th scope="row" title="Loan-to-Value Ratio: requested loan amount divided by the value of the security offered.">
+                          LTV <span className="ratio-description">Requested loan ÷ security value</span>
+                        </th>
+                        <td>{assessment ? percent(assessment.ltv) : 'Pending'}</td>
+                        <td>{assessment ? assessment.ltv === null ? 'Optional' : ltvAction : 'Pending'}</td>
                       </tr>
                       <tr>
-                        <th scope="row">CIBIL Score</th>
+                        <th scope="row" title={`CIBIL score used for screening; ${POLICY.cibilFloor} is the indicative screening floor.`}>
+                          CIBIL Score <span className="ratio-description">Screening floor {POLICY.cibilFloor}</span>
+                        </th>
                         <td>
                           <input
                             className="score-input"
                             aria-label="CIBIL score"
                             value={form.cibilScore}
                             onChange={event => update('cibilScore', event.target.value)}
+                            type="number"
                             inputMode="numeric"
-                            maxLength={3}
+                            step="any"
                             required
                             aria-invalid={Boolean(errors.cibilScore)}
                             aria-describedby={errors.cibilScore ? 'eligibility-cibil-score-error' : undefined}
@@ -883,15 +1045,14 @@ export default function LoanEligibilityPage() {
               </aside>
             </div>
 
-            <p className="policy-note">
-              Indicative screening only. Enter gross monthly income, regular living expenses, and existing loan
-              repayments separately. FOIR is existing debt plus proposed EMI divided by income after regular
-              expenses; DTI is existing debt plus proposed EMI divided by gross monthly income. Home-loan
-              LTV limits shown are indicative; the lender&apos;s approved policy and verification determine final terms.
-            </p>
-
             {assessment && (
-              <div className={`assessment-result ${assessment.isEligible ? '' : 'not-eligible'}`} role="status">
+              <div className={`assessment-result ${
+                assessment.isEligible
+                  ? 'eligible'
+                  : assessment.decision === 'Refer for Review'
+                    ? 'review'
+                    : 'not-eligible'
+              }`} role="status">
                 <strong>{assessment.decision}</strong>
                 {assessment.reasons.length > 0 && (
                   <ul>{assessment.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
@@ -915,6 +1076,102 @@ export default function LoanEligibilityPage() {
             )}
           </fieldset>
         </form>
+
+        {leadPickerOpen && (
+          <div
+            className="lead-picker-overlay"
+            role="presentation"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) setLeadPickerOpen(false);
+            }}
+          >
+            <section
+              className="lead-picker-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="lead-picker-title"
+              onKeyDown={event => {
+                if (event.key === 'Escape') setLeadPickerOpen(false);
+              }}
+            >
+              <header className="lead-picker-header">
+                <div>
+                  <h2 id="lead-picker-title">Select a lead</h2>
+                  <p>Search backend leads by lead ID or applicant name.</p>
+                </div>
+                <button
+                  className="lead-picker-close"
+                  type="button"
+                  onClick={() => setLeadPickerOpen(false)}
+                  aria-label="Close lead search"
+                >
+                  <X size={18} />
+                </button>
+              </header>
+              <label className="lead-picker-search" htmlFor="lead-picker-search">
+                <Search size={17} aria-hidden="true" />
+                <input
+                  id="lead-picker-search"
+                  type="search"
+                  value={leadSearch}
+                  onChange={event => setLeadSearch(event.target.value)}
+                  placeholder="Search by lead ID or applicant name"
+                  autoComplete="off"
+                  autoFocus
+                />
+              </label>
+              {leadPickerError && <p className="lead-picker-error" role="alert">{leadPickerError}</p>}
+              <div className="lead-picker-table-wrap">
+                <table className="lead-picker-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Lead ID</th>
+                      <th scope="col">Applicant</th>
+                      <th scope="col">Loan product</th>
+                      <th scope="col">Loan amount (Rs.)</th>
+                      <th scope="col" aria-label="Action" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leadsLoading ? (
+                      <tr><td className="lead-picker-empty" colSpan="5">Loading leads from the backend...</td></tr>
+                    ) : leadPickerError ? (
+                      <tr><td className="lead-picker-empty" colSpan="5">Leads could not be loaded.</td></tr>
+                    ) : filteredLeads.length ? (
+                      filteredLeads.map((lead, index) => {
+                        const leadId = getLeadId(lead);
+                        return (
+                          <tr key={leadId || index}>
+                            <td className="lead-picker-id">{leadId || '—'}</td>
+                            <td>{getLeadName(lead) || '—'}</td>
+                            <td>{getLeadProduct(lead) || leadValue(lead, 'loanProductType', 'loan_product_type', 'product', 'productName', 'product_name') || '—'}</td>
+                            <td>{leadValue(lead, 'loanAmount', 'loan_amount', 'requestedAmount', 'requested_amount', 'amount') || '—'}</td>
+                            <td>
+                              <button
+                                className="lead-picker-select"
+                                type="button"
+                                onClick={() => selectLead(lead)}
+                                disabled={!leadId}
+                              >
+                                Select
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td className="lead-picker-empty" colSpan="5">
+                          {leads.length ? 'No leads match your search.' : 'No leads are available.'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        )}
       </div>
     </AppShell>
   );
@@ -927,11 +1184,15 @@ function Field({
   error,
   inputMode,
   required = false,
-  maxLength,
-  autoComplete = 'off'
+  autoComplete = 'off',
+  helpText
 }) {
   const id = `eligibility-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   const errorId = `${id}-error`;
+  const describedBy = [
+    helpText ? `${id}-help` : null,
+    error ? errorId : null
+  ].filter(Boolean).join(' ') || undefined;
   return (
     <label className="eligibility-field" htmlFor={id}>
       <span>{label}</span>
@@ -939,13 +1200,15 @@ function Field({
         id={id}
         value={value}
         onChange={event => onChange(event.target.value)}
+        type={inputMode ? 'number' : 'text'}
         inputMode={inputMode || 'text'}
+        step={inputMode ? 'any' : undefined}
         required={required}
-        maxLength={maxLength}
         aria-invalid={Boolean(error)}
-        aria-describedby={error ? errorId : undefined}
+        aria-describedby={describedBy}
         autoComplete={autoComplete}
       />
+      {helpText && <small className="field-help" id={`${id}-help`}>{helpText}</small>}
       {error && <small className="field-error" id={errorId}>{error}</small>}
     </label>
   );
@@ -961,52 +1224,93 @@ function ResultField({ label, value }) {
 }
 
 const styles = `
-.eligibility-page{max-width:1280px;margin:0 auto;padding:16px 20px 32px;color:#202b36}
+.los-page-wrap:has(> .eligibility-page){display:flex;align-items:flex-start;justify-content:center;width:100%;max-width:none;margin:0 auto;box-sizing:border-box}
+.eligibility-page{width:100%;max-width:1480px;min-width:0;margin:0 auto;padding:24px 32px 40px;border-radius:14px;background:#f3f8f6;color:#202b36}
 .eligibility-heading{display:flex;min-height:30px;align-items:center;justify-content:space-between;gap:16px;margin:0 0 10px}
-.eligibility-title{margin:0;color:#17212b;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.eligibility-title{margin:0;color:#17212b;font-size:24px;font-weight:700;letter-spacing:-.02em}
 .eligibility-status{display:block;max-width:190px;overflow:hidden;padding:5px 11px;border:1px solid #e5e9ed;border-radius:999px;background:#f7f8fa;color:#606a73;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
 .eligibility-status.checked{border-color:#aadbb1;background:#edf8ef;color:#26703a;font-weight:600}
+.eligibility-status.pending{border-color:#d6dde4;background:#f4f7fa;color:#576675}
+.eligibility-status.review{border-color:#e7d19c;background:#fff8e8;color:#805c12;font-weight:600}
 .eligibility-status.rejected{border-color:#efc4c4;background:#fff3f3;color:#9a3434;font-weight:600}
 .eligibility-form-fields{min-width:0;margin:0;padding:0;border:0}
-.eligibility-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(170px,1fr);gap:12px;align-items:start}
+.eligibility-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(330px,.95fr);gap:18px;align-items:start}
 .eligibility-main{display:grid;gap:9px;min-width:0}
-.form-panel,.assessment-panel{min-width:0;padding:10px;border:1px solid #dedfe1;border-radius:10px;background:#fff}
-.form-panel h2,.assessment-panel h2{margin:0;color:#252a2f;font-size:13px;font-weight:700}
-.eligibility-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:start}
-.applicant-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
-.eligibility-field{display:grid;gap:4px;min-width:0;color:#5d6268;font-size:11px;font-weight:500;line-height:1.3}
-.form-panel h2+.eligibility-fields{margin-top:8px}
-.eligibility-field input,.eligibility-field select,.result-field input{width:100%;height:34px;min-width:0;padding:0 9px;border:1px solid #d9dcdf;border-radius:6px;background:#fff;color:#20262c;font:13px Arial,sans-serif}
+.form-panel,.assessment-panel{min-width:0;padding:16px;border:1px solid #dce8e3;border-radius:12px;background:#fff;box-shadow:0 4px 16px #173a2d0b}
+.assessment-panel{position:sticky;top:16px}
+.form-panel h2,.assessment-panel h2{margin:0;color:#173c36;font-size:16px;font-weight:700}
+.eligibility-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.applicant-fields{grid-template-columns:minmax(150px,.62fr) minmax(0,1.38fr)}
+.eligibility-field{display:grid;gap:5px;min-width:0;color:#53645f;font-size:12px;font-weight:500;line-height:1.35}
+.form-panel h2+.eligibility-fields{margin-top:12px}
+.eligibility-field input,.eligibility-field select,.result-field input{width:100%;height:40px;min-width:0;padding:0 10px;border:1px solid #cbd9d4;border-radius:7px;background:#fff;color:#20262c;font:14px Arial,sans-serif}
 .eligibility-field input:focus,.eligibility-field select:focus,.score-input:focus,.result-field input:focus{outline:3px solid #168b6324;border-color:#168b63}
 .eligibility-field input[aria-invalid=true],.eligibility-field select[aria-invalid=true],.score-input[aria-invalid=true],.result-field input[aria-invalid=true]{border-color:#bd4d4d;background:#fffafa}
-.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
-.add-row{display:inline-flex;min-height:28px;align-items:center;gap:5px;padding:4px 9px;border:1px solid #d0d2d4;border-radius:7px;background:#fff;color:#38424a;font-size:11px;font-weight:600;cursor:pointer}
-.add-row:hover{border-color:#168b63;background:#f4faf6}
+.field-help{color:#747d84;font-size:10px;font-weight:400;line-height:1.35}
+.lead-id-field{max-width:270px}
+.lead-id-control{display:flex;align-items:center;gap:6px;min-width:0}
+.lead-id-control input{flex:1;width:0}
+.lead-search-button{display:grid;flex:0 0 40px;width:40px;height:40px;place-items:center;border:1px solid #b9d6cb;border-radius:7px;background:#f4faf7;color:#28705e;cursor:pointer}
+.lead-search-button:hover{border-color:#168b63;background:#eaf6ef;color:#11634e}
+.lead-picker-overlay{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:20px;background:#102d35a6}
+.lead-picker-dialog{display:flex;flex-direction:column;width:min(820px,100%);max-height:88vh;overflow:hidden;border:1px solid #dce8e3;border-radius:10px;background:#fff;box-shadow:0 24px 70px #0d262d40}
+.lead-picker-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:17px 20px;border-bottom:1px solid #e5ecea;background:#f8fbfa}
+.lead-picker-header h2{margin:0;color:#1c4847;font-size:18px}
+.lead-picker-header p{margin:4px 0 0;color:#718486;font-size:12px}
+.lead-picker-close{display:grid;flex:0 0 34px;width:34px;height:34px;place-items:center;border:1px solid #dce6e3;border-radius:5px;background:#fff;color:#526a6c;cursor:pointer}
+.lead-picker-close:hover{background:#eef5f3}
+.lead-picker-search{display:flex;align-items:center;gap:9px;height:40px;margin:16px 18px 10px;padding:0 11px;border:1px solid #cbd9d7;border-radius:6px;color:#718486}
+.lead-picker-search:focus-within{border-color:#568e88;box-shadow:0 0 0 3px #177e7a19}
+.lead-picker-search input{width:100%;height:100%;border:0;outline:0;background:transparent;color:#203c42;font:12px Arial,sans-serif}
+.lead-picker-table-wrap{flex:1;min-height:0;max-width:100%;margin:0 18px 18px;overflow:auto;border:1px solid #e1e9e6;border-radius:5px}
+.lead-picker-table{width:100%;min-width:680px;border-collapse:collapse;table-layout:auto}
+.lead-picker-table th,.lead-picker-table td{height:45px;padding:8px 11px;border-bottom:1px solid #edf1f0;text-align:left;color:#354d4f;font-size:12px}
+.lead-picker-table th{position:sticky;top:0;background:#f5f8f7;color:#607577;font-size:10px;font-weight:700;text-transform:uppercase}
+.lead-picker-table tbody tr:hover{background:#fbfdfc}
+.lead-picker-table tbody tr:last-child td{border-bottom:0}
+.lead-picker-id{color:#176e67!important;font-weight:750}
+.lead-picker-select{min-height:30px;padding:0 11px;border:1px solid #177e7a;border-radius:5px;background:#177e7a;color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+.lead-picker-select:hover{background:#0c6662}
+.lead-picker-select:disabled{opacity:.5;cursor:not-allowed}
+.lead-picker-empty{height:90px!important;text-align:center!important;color:#718284!important}
+.lead-picker-error{margin:0 18px 10px;padding:9px 11px;border:1px solid #e7cccc;border-radius:5px;background:#fff7f7;color:#a43838;font-size:12px}
+.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.table-help{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px;color:#687a74;font-size:11px;line-height:1.45}
+.row-count{flex:none;color:#168b73;font-size:10px;font-weight:700}
+.add-row{display:inline-flex;min-height:34px;align-items:center;gap:6px;padding:5px 11px;border:1px solid #b9d6cb;border-radius:7px;background:#f6fbf8;color:#23604d;font-size:12px;font-weight:600;cursor:pointer}
+.add-row:hover{border-color:#168b63;background:#edf8f2}
+.add-row:disabled{opacity:.5;cursor:not-allowed}
 .table-scroll{overflow-x:auto;border-radius:6px}
-.eligibility-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10px}
-.eligibility-table th,.eligibility-table td{height:34px;padding:3px 4px;border-bottom:1px solid #e7e8e9;text-align:center;vertical-align:middle}
-.eligibility-table thead th{height:25px;color:#777e84;font-size:9px;font-weight:500}
+.eligibility-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+.eligibility-table th,.eligibility-table td{height:40px;padding:5px 6px;border-bottom:1px solid #e5ece8;text-align:center;vertical-align:middle}
+.eligibility-table thead th{position:sticky;top:0;z-index:1;height:32px;background:#f5f9f7;color:#52675f;font-size:10px;font-weight:600}
 .eligibility-table tbody th{color:#414950}
-.eligibility-table td input,.eligibility-table td select{width:100%;height:29px;min-width:0;padding:0 5px;border:1px solid #dfe1e3;border-radius:5px;background:#fff;color:#242b30;font-size:11px}
+.eligibility-table td input,.eligibility-table td select{width:100%;height:34px;min-width:0;padding:0 7px;border:1px solid #d3dfda;border-radius:6px;background:#fff;color:#242b30;font-size:12px}
 .table-field-error{display:block;margin-top:3px;color:#a52e2e;font-size:9px;font-weight:400;text-align:left}
-.income-table th:first-child{width:19%}.income-table th:nth-child(2){width:22%}.income-table th:nth-child(3),.income-table th:nth-child(4){width:24%}.income-table th:last-child{width:11%}
+.income-table{min-width:600px}
+.income-table th:first-child{width:12%}.income-table th:nth-child(2){width:24%}.income-table th:nth-child(3),.income-table th:nth-child(4){width:26%}.income-table th:last-child{width:12%}
 .income-table tbody td:nth-child(2){text-align:left}
 .income-table .total-row{height:28px;font-weight:600}
 .total-row td{height:28px;border-bottom:0}
 .row-remove{display:inline-grid;width:23px;height:25px;place-items:center;border:0;border-radius:5px;background:transparent;color:#a34a4a;cursor:pointer}
 .row-remove:hover{background:#fff0f0}
 .assessment-panel h2{margin-bottom:8px}
-.eligibility-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 8px;padding:9px;border-radius:9px;background:#c9eac8}
+.eligibility-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 5px;padding:12px;border-radius:10px}
+.eligibility-results.pending{background:#f1f4f7}
+.eligibility-results.calculated{background:#dff2e1;box-shadow:inset 0 0 0 1px #b5dcb8}
 .result-field{display:grid;gap:3px;min-width:0;color:#4f6251;font-size:10px;font-weight:500}
 .result-field output,.result-field input{display:flex;align-items:center;justify-content:center;min-width:0;height:25px;padding:0 5px;border:0;border-radius:4px;background:transparent;color:#243b29;font:600 12px Arial,sans-serif;text-align:center}
 .eligibility-results .result-field:first-child{grid-column:1/-1;padding-bottom:5px;border-bottom:1px solid #a9d8a8}
 .eligibility-results .result-field:first-child output{justify-content:flex-start;font-size:14px}
 .eligibility-results .result-field input{height:25px;border:1px solid #b5d8b3;background:#fff}
 .ratio-scroll{margin-top:2px}
-.ratio-table th:first-child{width:34%}.ratio-table th:nth-child(2){width:37%}.ratio-table th:last-child{width:29%}
+.ratio-table th:first-child{width:46%}.ratio-table th:nth-child(2){width:28%}.ratio-table th:last-child{width:26%}
 .ratio-table thead th{height:24px}
 .ratio-table th[scope=row]{text-align:left;font-weight:500}
 .ratio-table td:last-child{color:#697178;font-size:9px}
+.ratio-description{display:block;margin-top:2px;color:#737b81;font-size:8px;font-weight:400;line-height:1.25}
+.assessment-state{margin:0 0 4px;color:#717b84;font-size:9px;line-height:1.3}
+.assessment-state.calculated{color:#26703a;font-weight:600}
 .score-input{text-align:center}
 .assessment-panel>.field-error{margin:2px 0 4px}
 .eligibility-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}
@@ -1017,8 +1321,9 @@ const styles = `
 .continue-button:hover{background:#1e5d36}
 .secondary-button:hover{border-color:#aeb5ba;background:#f7f8f8}
 .primary-button:disabled{opacity:.65;cursor:wait}
-.policy-note{margin:10px 0;color:#737b81;font-size:10px;line-height:1.5}
 .assessment-result{margin:10px 0;padding:12px 14px;border:1px solid #add5b2;border-radius:8px;background:#f2faf2;color:#315b2d;font-size:13px;line-height:1.5}
+.assessment-result.eligible{border-color:#add5b2;background:#f2faf2;color:#315b2d}
+.assessment-result.review{border-color:#e7d19c;background:#fff9ed;color:#79570f}
 .assessment-result p{margin:6px 0 0}
 .assessment-note{font-size:11px;font-weight:700;letter-spacing:.025em}
 .assessment-result ul{margin:7px 0 0;padding-left:20px}
@@ -1029,6 +1334,7 @@ const styles = `
 .approval-letter pre{overflow:auto;white-space:pre-wrap;font:12px/1.6 Arial,sans-serif}
 .field-error{display:block;color:#a52e2e;font-size:10px;font-weight:400;line-height:1.4}
 .form-error{margin:10px 0;padding:10px 12px;border:1px solid #e3bcbc;border-radius:7px;background:#fff6f6;color:#8f3030;font-size:12px}
-@media(max-width:480px){.eligibility-page{padding:12px}.eligibility-layout{grid-template-columns:minmax(0,1fr)}.eligibility-heading{margin-bottom:9px}.eligibility-title{font-size:18px}.eligibility-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:360px){.eligibility-fields,.applicant-fields{grid-template-columns:1fr}.income-table{min-width:380px}}
+@media(max-width:960px){.eligibility-layout{grid-template-columns:minmax(0,1fr)}.assessment-panel{position:static}.eligibility-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.eligibility-page{padding:14px;border-radius:0}.eligibility-layout{grid-template-columns:minmax(0,1fr)}.eligibility-heading{margin-bottom:10px}.eligibility-title{font-size:20px}.form-panel,.assessment-panel{padding:12px}.eligibility-fields,.applicant-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-id-field{max-width:none}.table-help{align-items:flex-start;flex-direction:column;gap:4px}.lead-picker-overlay{padding:10px}.lead-picker-header{padding:14px}.lead-picker-table-wrap{margin:0 12px 12px}.lead-picker-search{margin:12px 12px 8px}}
+@media(max-width:360px){.eligibility-fields,.applicant-fields{grid-template-columns:1fr}}
 `;

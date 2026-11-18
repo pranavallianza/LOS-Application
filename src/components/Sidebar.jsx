@@ -72,7 +72,7 @@ const NAV = [
   },
   {
     type: "group",
-    label: "Eligibility & sanctioning",
+    label: "Eligibility & Sanctioning",
     icon: ClipboardCheck,
     children: [
       {

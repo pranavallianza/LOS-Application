@@ -1088,7 +1088,7 @@ export default function RetailLoanApplicationForm({
   };
 
   return (
-    <AppShell title={isEditMode ? 'Edit Retail Loan Application' : 'Retail Loan Application'}>
+    <AppShell title={isEditMode ? ' Retail Loan Application' : 'Retail Loan Application'}>
       <div className="retail-form-page">
         <button
           className="loan-form-back"
