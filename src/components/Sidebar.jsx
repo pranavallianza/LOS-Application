@@ -233,7 +233,10 @@ export default function Sidebar({
     setOpenGroup((current) => current === label ? '' : label);
   };
 
-  const closeAfterNavigation = () => onClose?.();
+  const closeAfterNavigation = () => {
+    onToggle?.(true);
+    onClose?.();
+  };
 
   return (
     <>
