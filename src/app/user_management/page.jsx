@@ -142,16 +142,6 @@ export default function UserManagementPage() {
 
   };
 
-  const handleResetSearch = () => {
-
-    setSearchInput('');
-
-    setSearchQuery('');
-
-    setCurrentPage(1);
-
-  };
-
   const filteredRecords = useMemo(() => {
 
     const q = searchQuery.trim().toLowerCase();
@@ -242,80 +232,6 @@ export default function UserManagementPage() {
         </h1>
       </div>
 
-      <div
-
-        style={{
-
-          display: 'grid',
-
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-
-          gap: '15px',
-
-          marginBottom: '20px',
-
-        }}
-
-      >
-
-        {[
-
-          { key: 'leads', label: 'Total No. of Leads', count: leads.length },
-
-          { key: 'customers', label: 'Total No. of Customers', count: customers.length },
-
-          { key: 'employees', label: 'Total No. of Employees', count: employees.length },
-
-        ].map((summary) => {
-
-          return (
-
-            <article
-
-              key={summary.key}
-
-              aria-label={`${summary.label}: ${summary.count}`}
-
-              style={{
-
-                minHeight: '112px',
-
-                padding: '19px 21px',
-
-                border: '1px solid #e5ecec',
-
-                borderRadius: '8px',
-
-                background: '#fff',
-
-                boxShadow: '0 2px 8px rgba(17, 39, 45, 0.03)',
-
-                textAlign: 'left',
-
-              }}
-
-            >
-
-              <span style={{ display: 'block', fontSize: '11px', color: '#718185', fontWeight: 600 }}>
-
-                {summary.label}
-
-              </span>
-
-              <strong style={{ display: 'block', marginTop: '7px', font: '700 26px Manrope', color: '#1e3f45' }}>
-
-                {summary.count}
-
-              </strong>
-
-            </article>
-
-          );
-
-        })}
-
-      </div>
-
       {/* Notification Banner */}
 
       {notification && (
@@ -380,6 +296,98 @@ export default function UserManagementPage() {
 
       )}
 
+
+      <div
+        className="user-management-overview"
+        style={{
+
+          display: 'grid',
+
+          alignItems: 'center',
+
+          gap: '12px',
+
+          marginBottom: '20px',
+
+        }}
+
+      >
+
+        {[
+
+          { key: 'leads', label: 'Total Leads', count: leads.length },
+
+          { key: 'customers', label: 'Total Customers', count: customers.length },
+
+          { key: 'employees', label: 'Total Employees', count: employees.length },
+
+        ].map((summary) => {
+
+          return (
+
+            <article
+
+              key={summary.key}
+
+              aria-label={`${summary.label}: ${summary.count}`}
+
+              style={{
+
+                height: '44px',
+                minHeight: '44px',
+
+                padding: '0 14px',
+
+                display: 'flex',
+
+                alignItems: 'center',
+
+                justifyContent: 'space-between',
+
+                gap: '10px',
+
+                border: '1px solid #C6DACF',
+
+                borderRadius: '8px',
+
+                background: '#fff',
+
+                boxShadow: '0 2px 8px rgba(17, 39, 45, 0.03)',
+
+                textAlign: 'left',
+
+              }}
+
+            >
+
+              <span style={{ fontSize: '12px', color: '#718185', fontWeight: 600, whiteSpace: 'nowrap' }}>
+
+                {summary.label}
+
+              </span>
+
+              <strong style={{
+                display: 'inline-grid',
+                placeItems: 'center',
+                minWidth: '28px',
+                height: '28px',
+                padding: '0 5px',
+                borderRadius: '7px',
+                background: '#DCFCE7',
+                font: '700 16px Manrope',
+                color: '#1e3f45',
+              }}>
+
+                {summary.count}
+
+              </strong>
+
+            </article>
+
+          );
+
+        })}
+
       {/* =====================================================
 
           ENHANCED PROMINENT SEARCH BAR SECTION
@@ -392,17 +400,7 @@ export default function UserManagementPage() {
 
         style={{
 
-          display: 'flex',
-
-          alignItems: 'center',
-
-          justifyContent: 'space-between',
-
-          gap: '16px',
-
-          marginBottom: '20px',
-
-          flexWrap: 'wrap',
+          display: 'contents',
 
         }}
 
@@ -518,26 +516,6 @@ export default function UserManagementPage() {
 
           </button>
 
-          {searchQuery && (
-
-            <button
-
-              type="button"
-
-              className="secondary-button"
-
-              onClick={handleResetSearch}
-
-              style={{ height: '50px', padding: '0 16px', fontSize: '12px', flexShrink: 0 }}
-
-            >
-
-              Reset Filter
-
-            </button>
-
-          )}
-
         </div>
 
         <PermissionGate module="user-management" action="create">
@@ -548,7 +526,7 @@ export default function UserManagementPage() {
 
           style={{
 
-            height: '50px',
+            height: '44px',
 
             padding: '0 20px',
 
@@ -558,6 +536,7 @@ export default function UserManagementPage() {
 
             alignItems: 'center',
             gap: '8px',
+            fontWeight: 600,
             background: '#167c78',
             color: '#fff',
             border: '1px solid #167c78',
@@ -573,6 +552,7 @@ export default function UserManagementPage() {
         </button>
         </PermissionGate>
 
+      </div>
       </div>
 
       {/* =====================================================

@@ -650,6 +650,40 @@ td strong {
   gap: 10px;
   margin-bottom: 15px;
 }
+.user-management-overview {
+  grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(320px, 2.6fr) auto;
+}
+.user-management-overview .prominent-search-bar {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: initial;
+  gap: 8px;
+}
+.user-management-overview .prominent-search-input,
+.user-management-overview .prominent-search-bar > button {
+  height: 44px !important;
+}
+@media (max-width: 1100px) {
+  .user-management-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .user-management-overview .prominent-search-bar {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 640px) {
+  .user-management-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .user-management-overview .prominent-search-bar {
+    grid-column: 1 / -1;
+    flex-wrap: nowrap;
+  }
+  .user-management-overview .prominent-search-input {
+    flex-basis: auto;
+  }
+}
 .search-field {
   height: 36px;
   border: 1px solid #d8e2e1;
@@ -3351,11 +3385,12 @@ td strong {
   justify-content: space-between;
   gap: 12px;
   padding: 0 14px;
-  border: 1px solid #d7e1e4;
+  border: 1px solid #C6DACF;
   border-radius: 8px;
-  background: #f8fbfc;
+  background: #fff;
   color: #1d3b48;
   text-align: left;
+  font-size: 12px;
   font-weight: 400;
   transition:
     border-color 0.2s,
@@ -3431,17 +3466,18 @@ td strong {
 }
 .dob-picker-trigger {
   width: 100%;
-  height: 48px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 0 14px;
-  border: 1px solid #d7e1e4;
+  border: 1px solid #C6DACF;
   border-radius: 8px;
-  background: #f8fbfc;
+  background: #fff;
   color: #1d3b48;
   text-align: left;
+  font-size: 12px;
   font-weight: 400;
   transition:
     border-color 0.2s,
@@ -3450,7 +3486,7 @@ td strong {
 .dob-picker-trigger:focus {
   outline: none;
   border-color: #177e7a;
-  box-shadow: 0 0 0 4px rgba(23, 126, 122, 0.1);
+  box-shadow: none;
 }
 .dob-picker-trigger.has-error {
   border-color: #dc2626;
@@ -4896,7 +4932,7 @@ td strong {
 .form-input {
   width: 100%;
   height: 40px;
-  border: 1px solid #d8e2e1;
+  border: 1px solid #C6DACF;
   border-radius: 6px;
   padding: 0 12px;
   background: #fff;
@@ -4907,9 +4943,218 @@ td strong {
     border-color 0.15s,
     box-shadow 0.15s;
 }
+.user-form-personal-grid .user-form-prominent-input {
+  height: 44px;
+  font-size: 14px;
+  font-weight: 500;
+}
+#field-title {
+  appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%231e3f45' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px 8px;
+}
+.user-form-mobile-field {
+  grid-column: 1 / 3;
+}
+.user-form-dob-field {
+  grid-column: 3 / 4;
+}
+.user-form-role-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.75fr) !important;
+}
+.user-form-session-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+@media (max-width: 900px) {
+  .user-form-personal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .user-form-personal-details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .user-form-role-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .user-form-session-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .user-form-mobile-field,
+  .user-form-dob-field {
+    grid-column: auto;
+  }
+}
+@media (max-width: 560px) {
+  .user-form-personal-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .user-form-personal-details-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .user-form-role-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .user-form-session-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
 .form-input:focus {
   border-color: #177e7a;
-  box-shadow: 0 0 0 3px rgba(23, 126, 122, 0.1);
+  box-shadow: none;
+}
+.user-time-picker {
+  position: relative;
+  width: 100%;
+}
+.user-time-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid #C6DACF;
+  border-radius: 6px;
+  background: #fff;
+  color: #1e3f45;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.user-time-picker-trigger svg {
+  color: #167c78;
+}
+.user-time-picker-trigger:focus-visible {
+  outline: 1px solid #177e7a;
+  outline-offset: 1px;
+}
+.user-time-picker-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 1000;
+  display: grid;
+  justify-items: center;
+  width: min(280px, calc(100vw - 24px));
+  padding: 9px;
+  border: 1px solid #dfe6e3;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 34px rgba(19, 61, 56, 0.16);
+}
+.user-time-picker-display {
+  display: grid;
+  grid-template-columns: minmax(42px, 1fr) 8px minmax(42px, 1fr) 54px;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border-radius: 11px;
+  background: #16837a;
+  color: #fff;
+}
+.user-time-picker-display > button {
+  height: 40px;
+  border: 1px solid rgba(7, 94, 87, 0.65);
+  border-radius: 7px;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.user-time-picker-display > button.active {
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  background: rgba(7, 94, 87, 0.22);
+}
+.user-time-picker-display > span {
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+}
+.user-time-picker-period {
+  display: grid;
+  gap: 4px;
+}
+.user-time-picker-period button {
+  height: 25px;
+  border: 1px solid rgba(7, 94, 87, 0.65);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.user-time-picker-period button.active {
+  border: 2px solid rgba(255, 255, 255, 0.75);
+  background: rgba(7, 94, 87, 0.32);
+}
+.user-time-picker-dial {
+  display: block;
+  width: min(180px, 100%);
+  margin: 6px auto 8px;
+  overflow: visible;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+.user-time-picker-dial:active {
+  cursor: grabbing;
+}
+.dial-background {
+  fill: #f3f4f3;
+}
+.dial-tick {
+  stroke: #9aa6a2;
+  stroke-width: 1.2;
+}
+.dial-tick.major {
+  stroke: #16837a;
+  stroke-width: 2.5;
+}
+.dial-hand {
+  stroke: #16837a;
+  stroke-linecap: round;
+  stroke-width: 2.5;
+}
+.dial-center,
+.dial-selected {
+  fill: #16837a;
+}
+.dial-label {
+  fill: #182320;
+  font-size: 17px;
+  pointer-events: none;
+}
+.dial-label.selected {
+  fill: #fff;
+  font-weight: 700;
+}
+.user-time-picker-set {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid #d4d8d6;
+  border-radius: 7px;
+  background: #fff;
+  color: #263330;
+  font-size: 12px;
+  cursor: pointer;
+}
+.user-time-picker-set:hover {
+  border-color: #16837a;
+  color: #126e67;
+}
+@media (max-width: 560px) {
+  .user-time-picker-popover {
+    padding: 8px;
+  }
+  .user-time-picker-display {
+    grid-template-columns: minmax(42px, 1fr) 8px minmax(42px, 1fr) 54px;
+    padding: 7px;
+  }
 }
 .role-badge {
   display: inline-flex;
@@ -4934,7 +5179,7 @@ td strong {
 .prominent-search-input {
   height: 50px;
   min-width: 0;
-  border: 1px solid #cddbd9;
+  border: 1px solid #C6DACF;
   border-radius: 7px;
   background: #fff;
   display: flex;

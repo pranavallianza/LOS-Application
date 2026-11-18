@@ -121,6 +121,243 @@ function formatLocalDate(date) {
   return `${year}-${month}-${day}`;
 }
 
+function toTimePickerValue(value) {
+  const match = String(value ?? '').match(
+    /^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*(AM|PM))?$/i
+  );
+
+  if (!match) return null;
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const period = match[3]?.toUpperCase();
+
+  if (minutes > 59) return null;
+
+  if (period) {
+    if (hours < 1 || hours > 12) return null;
+    if (period === 'PM' && hours < 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+  } else if (hours > 23) {
+    return null;
+  }
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function fromTimePickerValue(value) {
+  const normalized = toTimePickerValue(value);
+  if (!normalized) return '';
+
+  const [hoursValue, minutes] = normalized.split(':');
+  const hours = Number(hoursValue);
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+
+  return `${String(displayHours).padStart(2, '0')}:${minutes} ${period}`;
+}
+
+function TimePickerField({ id, label, value, onChange }) {
+  const rootRef = useRef(null);
+  const dialRef = useRef(null);
+  const draggingRef = useRef(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [activePart, setActivePart] = useState('hour');
+  const [draft, setDraft] = useState({ hour: 9, minute: 0, period: 'AM' });
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleOutsideClick = (event) => {
+      if (!rootRef.current?.contains(event.target)) setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen]);
+
+  const openPicker = () => {
+    const normalized = toTimePickerValue(value) || '09:00';
+    const [hoursText, minutesText] = normalized.split(':');
+    const hours = Number(hoursText);
+    setDraft({
+      hour: hours % 12 || 12,
+      minute: Number(minutesText),
+      period: hours >= 12 ? 'PM' : 'AM',
+    });
+    setActivePart('hour');
+    setIsOpen(true);
+  };
+
+  const chooseAtPointer = (event) => {
+    const dial = dialRef.current;
+    if (!dial) return;
+
+    const bounds = dial.getBoundingClientRect();
+    const x = ((event.clientX - bounds.left) / bounds.width) * 280 - 140;
+    const y = ((event.clientY - bounds.top) / bounds.height) * 280 - 140;
+    const angle = (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);
+
+    if (activePart === 'hour') {
+      const hour = Math.round((angle / (Math.PI * 2)) * 12) % 12 || 12;
+      setDraft((previous) => ({ ...previous, hour }));
+    } else {
+      const minute = (Math.round((angle / (Math.PI * 2)) * 12) % 12) * 5;
+      setDraft((previous) => ({ ...previous, minute }));
+    }
+  };
+
+  const handlePointerDown = (event) => {
+    draggingRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    chooseAtPointer(event);
+  };
+
+  const handlePointerMove = (event) => {
+    if (draggingRef.current) chooseAtPointer(event);
+  };
+
+  const handlePointerUp = () => {
+    draggingRef.current = false;
+  };
+
+  const angleValue = activePart === 'hour'
+    ? ((draft.hour % 12) / 12) * Math.PI * 2
+    : (draft.minute / 60) * Math.PI * 2;
+  const handPoint = {
+    x: 140 + Math.sin(angleValue) * 88,
+    y: 140 - Math.cos(angleValue) * 88,
+  };
+  const dialLabels = activePart === 'hour'
+    ? Array.from({ length: 12 }, (_, index) => ({
+        value: index === 0 ? 12 : index,
+        label: String(index === 0 ? 12 : index).padStart(2, '0'),
+        angle: (index / 12) * Math.PI * 2,
+        selected: draft.hour === (index === 0 ? 12 : index),
+      }))
+    : Array.from({ length: 12 }, (_, index) => ({
+        value: index * 5,
+        label: String(index * 5).padStart(2, '0'),
+        angle: (index / 12) * Math.PI * 2,
+        selected: draft.minute === index * 5,
+      }));
+
+  return (
+    <div className="user-time-picker" ref={rootRef}>
+      <button
+        id={id}
+        type="button"
+        className="user-time-picker-trigger"
+        aria-label={`${label}: ${value || 'Select time'}`}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={openPicker}
+      >
+        <span>{value || 'Select time'}</span>
+        <Clock size={17} aria-hidden="true" />
+      </button>
+
+      {isOpen && (
+        <div className="user-time-picker-popover" role="dialog" aria-label={`Set ${label}`}>
+          <div className="user-time-picker-display">
+            <button
+              type="button"
+              className={activePart === 'hour' ? 'active' : ''}
+              onClick={() => setActivePart('hour')}
+              aria-label="Select hour"
+            >
+              {String(draft.hour).padStart(2, '0')}
+            </button>
+            <span>:</span>
+            <button
+              type="button"
+              className={activePart === 'minute' ? 'active' : ''}
+              onClick={() => setActivePart('minute')}
+              aria-label="Select minute"
+            >
+              {String(draft.minute).padStart(2, '0')}
+            </button>
+            <div className="user-time-picker-period">
+              {['AM', 'PM'].map((period) => (
+                <button
+                  key={period}
+                  type="button"
+                  className={draft.period === period ? 'active' : ''}
+                  onClick={() => setDraft((previous) => ({ ...previous, period }))}
+                >
+                  {period}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <svg
+            ref={dialRef}
+            className="user-time-picker-dial"
+            viewBox="0 0 280 280"
+            role="slider"
+            aria-label={`Choose ${activePart}`}
+            aria-valuenow={activePart === 'hour' ? draft.hour : draft.minute}
+            aria-valuemin={activePart === 'hour' ? 1 : 0}
+            aria-valuemax={activePart === 'hour' ? 12 : 55}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+          >
+            <circle cx="140" cy="140" r="126" className="dial-background" />
+            {Array.from({ length: 60 }, (_, index) => {
+              const angle = (index / 60) * Math.PI * 2;
+              const major = index % 5 === 0;
+              return (
+                <line
+                  key={`tick-${index}`}
+                  x1={140 + Math.sin(angle) * (major ? 118 : 121)}
+                  y1={140 - Math.cos(angle) * (major ? 118 : 121)}
+                  x2={140 + Math.sin(angle) * 126}
+                  y2={140 - Math.cos(angle) * 126}
+                  className={major ? 'dial-tick major' : 'dial-tick'}
+                />
+              );
+            })}
+            <line x1="140" y1="140" x2={handPoint.x} y2={handPoint.y} className="dial-hand" />
+            <circle cx={handPoint.x} cy={handPoint.y} r="21" className="dial-selected" />
+            <circle cx="140" cy="140" r="5" className="dial-center" />
+            {dialLabels.map(({ label: dialLabel, angle, selected }, index) => {
+              const x = 140 + Math.sin(angle) * 91;
+              const y = 140 - Math.cos(angle) * 91;
+              return (
+                <text
+                  key={`label-${index}`}
+                  x={x}
+                  y={y}
+                  className={`dial-label${selected ? ' selected' : ''}`}
+                  dominantBaseline="central"
+                  textAnchor="middle"
+                >
+                  {dialLabel}
+                </text>
+              );
+            })}
+          </svg>
+
+          <button
+            type="button"
+            className="user-time-picker-set"
+            onClick={() => {
+              const hours = (draft.hour % 12) + (draft.period === 'PM' ? 12 : 0);
+              onChange(fromTimePickerValue(`${String(hours).padStart(2, '0')}:${String(draft.minute).padStart(2, '0')}`));
+              setIsOpen(false);
+            }}
+          >
+            Set time
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* =========================================================
    NAME INPUT VALIDATION
 ========================================================= */
@@ -1209,17 +1446,6 @@ export default function UserForm({
   };
 
   /* =========================================================
-     REUSABLE INPUT STYLE
-  ========================================================= */
-
-  const helperStyle = {
-    fontSize: '11px',
-    color: '#647e82',
-    marginTop: '4px',
-    display: 'block',
-  };
-
-  /* =========================================================
      UI
   ========================================================= */
 
@@ -1236,10 +1462,18 @@ export default function UserForm({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: '8px',
+              padding: '8px 12px',
+              backgroundColor: '#fff',
+              border: '1px solid #C6DACF',
+              color: '#167c78',
+              borderRadius: '6px',
+              fontWeight: 600,
             }}
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={16} color="#167c78" />
+            <span>Back</span>
           </button>
         }
       />
@@ -1259,9 +1493,10 @@ export default function UserForm({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: '0.55fr 0.55fr 1.3fr 1.3fr 1.3fr',
               gap: '18px',
             }}
+            className="user-form-personal-grid"
           >
             <div>
               <label className="form-label" htmlFor="field-empNo">
@@ -1273,21 +1508,17 @@ export default function UserForm({
                 name="empNo"
                 type="text"
                 maxLength={20}
-                className={`form-input ${errors.empNo ? 'has-error' : ''}`}
+                className={`form-input user-form-prominent-input ${errors.empNo ? 'has-error' : ''}`}
                 value={form.empNo}
                 onChange={handleChange}
                 onBlur={handleBlur}
-                placeholder="e.g. EMP001"
+                placeholder=""
                 aria-invalid={Boolean(errors.empNo)}
               />
 
-              {errors.empNo ? (
+              {errors.empNo && (
                 <span className="field-error-text">
                   {errors.empNo}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Unique employee identifier (e.g. EMP001).
                 </span>
               )}
             </div>
@@ -1300,13 +1531,13 @@ export default function UserForm({
               <select
                 id="field-title"
                 name="title"
-                className={`form-input ${errors.title ? 'has-error' : ''}`}
+                className={`form-input user-form-prominent-input ${errors.title ? 'has-error' : ''}`}
                 value={form.title}
                 onChange={handleChange}
                 onBlur={handleBlur}
                 aria-invalid={Boolean(errors.title)}
               >
-                <option value="">Select title</option>
+                <option value="">Select</option>
                 <option value="Mr.">Mr.</option>
                 <option value="Mrs.">Mrs.</option>
                 <option value="Ms.">Ms.</option>
@@ -1338,13 +1569,9 @@ export default function UserForm({
                 aria-invalid={Boolean(errors.firstName)}
               />
 
-              {errors.firstName ? (
+              {errors.firstName && (
                 <span className="field-error-text">
                   {errors.firstName}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Maximum 50 characters.
                 </span>
               )}
             </div>
@@ -1367,13 +1594,9 @@ export default function UserForm({
                 aria-invalid={Boolean(errors.middleName)}
               />
 
-              {errors.middleName ? (
+              {errors.middleName && (
                 <span className="field-error-text">
                   {errors.middleName}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Optional. Maximum 50 characters.
                 </span>
               )}
             </div>
@@ -1397,13 +1620,9 @@ export default function UserForm({
                 aria-invalid={Boolean(errors.lastName)}
               />
 
-              {errors.lastName ? (
+              {errors.lastName && (
                 <span className="field-error-text">
                   {errors.lastName}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Maximum 50 characters.
                 </span>
               )}
             </div>
@@ -1412,12 +1631,13 @@ export default function UserForm({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: '0.55fr 0.55fr 1.3fr 1.3fr 1.3fr',
               gap: '18px',
               marginTop: '18px',
             }}
+            className="user-form-personal-details-grid"
           >
-            <div>
+            <div className="user-form-mobile-field">
               <label className="form-label" htmlFor="field-mobile">
                 Mobile <span>*</span>{' '}
                 <small style={{ color: '#167c78', fontWeight: 600 }}>
@@ -1440,18 +1660,14 @@ export default function UserForm({
                 aria-invalid={Boolean(errors.mobile)}
               />
 
-              {errors.mobile ? (
+              {errors.mobile && (
                 <span className="field-error-text">
                   {errors.mobile}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Mobile number starting with 6, 7, 8, or 9. Optional +91 or 0 prefix is accepted.
                 </span>
               )}
             </div>
 
-            <div>
+            <div className="user-form-dob-field">
               <label className="form-label" htmlFor="field-dateOfBirth">
                 Date of Birth <span>*</span>{' '}
                 <small style={{ color: '#167c78', fontWeight: 600 }}>
@@ -1510,13 +1726,9 @@ export default function UserForm({
                 )}
               </div>
 
-              {errors.dateOfBirth ? (
+              {errors.dateOfBirth && (
                 <span className="field-error-text">
                   {errors.dateOfBirth}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Applicant must be at least 18 years old (born on or before {maxDobFormatted}).
                 </span>
               )}
             </div>
@@ -1557,13 +1769,9 @@ export default function UserForm({
                 }}
               />
 
-              {errors.userName ? (
+              {errors.userName && (
                 <span className="field-error-text">
                   {errors.userName}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Unique username for system authentication.
                 </span>
               )}
             </div>
@@ -1580,7 +1788,7 @@ export default function UserForm({
                   id="field-password"
                   name="password"
                   type={showPassword ? 'text' : 'password'}
-                  maxLength={128}
+                  maxLength={16}
                   autoComplete="new-password"
                   className={`form-input ${errors.password ? 'has-error' : ''}`}
                   value={form.password}
@@ -1620,13 +1828,9 @@ export default function UserForm({
                 </button>
               </div>
 
-              {errors.password ? (
+              {errors.password && (
                 <span className="field-error-text">
                   {errors.password}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  8-128 characters; include at least 3 of uppercase, lowercase, numbers, and symbols.
                 </span>
               )}
             </div>
@@ -1641,7 +1845,7 @@ export default function UserForm({
                   id="field-confirmPassword"
                   name="confirmPassword"
                   type="password"
-                  maxLength={128}
+                  maxLength={16}
                   autoComplete="new-password"
                   className={`form-input ${errors.confirmPassword ? 'has-error' : ''}`}
                   value={form.confirmPassword}
@@ -1651,13 +1855,9 @@ export default function UserForm({
                   aria-invalid={Boolean(errors.confirmPassword)}
                 />
 
-                {errors.confirmPassword ? (
+                {errors.confirmPassword && (
                   <span className="field-error-text">
                     {errors.confirmPassword}
-                  </span>
-                ) : (
-                  <span style={helperStyle}>
-                    Enter the same password again.
                   </span>
                 )}
               </div>
@@ -1682,13 +1882,9 @@ export default function UserForm({
                 aria-invalid={Boolean(errors.email)}
               />
 
-              {errors.email ? (
+              {errors.email && (
                 <span className="field-error-text">
                   {errors.email}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Maximum 254 characters. Enter a valid email address.
                 </span>
               )}
             </div>
@@ -1708,9 +1904,10 @@ export default function UserForm({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr)',
               gap: '18px',
             }}
+            className="user-form-role-grid"
           >
             <div>
               <label className="form-label" htmlFor="field-designation">
@@ -1795,40 +1992,6 @@ export default function UserForm({
             </div>
 
             <div>
-              <label className="form-label" htmlFor="field-status">
-                Status <span>*</span>
-              </label>
-
-              <select
-                id="field-status"
-                name="status"
-                className={`form-input ${errors.status ? 'has-error' : ''}`}
-                value={form.status}
-                onChange={handleChange}
-                onBlur={handleBlur}
-              >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Suspended">Suspended</option>
-              </select>
-
-              {errors.status && (
-                <span className="field-error-text">
-                  {errors.status}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '18px',
-              marginTop: '18px',
-            }}
-          >
-            <div>
               <label className="form-label" htmlFor="field-loginBranch">
                 Login Branch {!form.allowMultiBranch && <span>*</span>}
               </label>
@@ -1859,15 +2022,34 @@ export default function UserForm({
                 ))}
               </select>
 
-              {errors.loginBranch ? (
+              {errors.loginBranch && (
                 <span className="field-error-text">
                   {errors.loginBranch}
                 </span>
-              ) : (
-                <span style={helperStyle}>
-                  {form.allowMultiBranch
-                    ? 'Multi-branch access is enabled.'
-                    : 'Primary operating branch assignment.'}
+              )}
+            </div>
+
+            <div>
+              <label className="form-label" htmlFor="field-status">
+                Status <span>*</span>
+              </label>
+
+              <select
+                id="field-status"
+                name="status"
+                className={`form-input ${errors.status ? 'has-error' : ''}`}
+                value={form.status}
+                onChange={handleChange}
+                onBlur={handleBlur}
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+                <option value="Suspended">Suspended</option>
+              </select>
+
+              {errors.status && (
+                <span className="field-error-text">
+                  {errors.status}
                 </span>
               )}
             </div>
@@ -1887,9 +2069,10 @@ export default function UserForm({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
               gap: '18px',
             }}
+            className="user-form-session-grid"
           >
             <div>
               <label className="form-label" htmlFor="field-sessionTimeout">
@@ -1909,13 +2092,9 @@ export default function UserForm({
                 aria-invalid={Boolean(errors.sessionTimeout)}
               />
 
-              {errors.sessionTimeout ? (
+              {errors.sessionTimeout && (
                 <span className="field-error-text">
                   {errors.sessionTimeout}
-                </span>
-              ) : (
-                <span style={helperStyle}>
-                  Duration before the login session expires (60 - 86,400 seconds).
                 </span>
               )}
             </div>
@@ -1925,19 +2104,18 @@ export default function UserForm({
                 Login Time
               </label>
 
-              <input
+              <TimePickerField
                 id="field-loginTime"
-                name="loginTime"
-                type="text"
-                className="form-input"
+                label="Login Time"
                 value={form.loginTime}
-                onChange={handleChange}
-                placeholder="09:00 AM"
+                onChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    loginTime: value,
+                  }))
+                }
               />
 
-              <span style={helperStyle}>
-                Permitted daily access window start time.
-              </span>
             </div>
 
             <div>
@@ -1945,19 +2123,18 @@ export default function UserForm({
                 LogOut Time
               </label>
 
-              <input
+              <TimePickerField
                 id="field-logoutTime"
-                name="logoutTime"
-                type="text"
-                className="form-input"
+                label="Logout Time"
                 value={form.logoutTime}
-                onChange={handleChange}
-                placeholder="06:00 PM"
+                onChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    logoutTime: value,
+                  }))
+                }
               />
 
-              <span style={helperStyle}>
-                Permitted daily access window end time.
-              </span>
             </div>
           </div>
         </div>
