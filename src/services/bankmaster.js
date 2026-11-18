@@ -2,7 +2,7 @@ import { getBankProfile } from './bankProfile';
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL
-).replace(/\/+$/, '');
+).replace(/\/+$/, "");
 
 export function getBankMaster() {
   return getBankProfile();
