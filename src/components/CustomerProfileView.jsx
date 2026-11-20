@@ -26,11 +26,7 @@ import {
 import AppShell from './AppShell';
 import Card from './Card';
 import { api } from '../services/api.js';
-import {
-  getCustomerLoanHistory,
-  normalizeCustomerType,
-  readCustomerRecords,
-} from '../services/customerStorage';
+import { readCustomerRecords } from '../services/customerStorage';
 
 const PROFILE_TABS = [
   { id: 'personal', label: 'Personal Details', icon: User },
@@ -38,7 +34,8 @@ const PROFILE_TABS = [
   { id: 'employment', label: 'Employment info', icon: Briefcase },
   { id: 'income', label: 'Income Details', icon: Wallet },
   { id: 'documents', label: 'Documents', icon: FileText },
-  { id: 'loan', label: 'Loan Details', icon: Landmark },
+  { id: 'loan', label: 'Loan History', icon: Landmark },
+  { id: 'references', label: 'Reference', icon: UsersRound },
 ];
 
 function formatDisplayCustomerName(customer) {
@@ -60,20 +57,9 @@ function formatDisplayCustomerName(customer) {
     }
   }
 
-  if (!title) {
-    if (customer.id === 'CUS-2024-00841' || /rohan/i.test(firstName)) title = 'Mr';
-    else if (customer.id === 'CUS-2024-00798' || /neha/i.test(firstName)) title = 'Ms';
-    else if (customer.id === 'CUS-2024-00742' || /vikram/i.test(firstName)) title = 'Mr';
-    else if (customer.id === 'CUS-2024-00691' || /ananya/i.test(firstName)) title = 'Ms';
-    else if (/sakshi/i.test(firstName)) title = 'Ms';
-    else if (form.gender === 'Female') title = 'Ms';
-    else if (form.gender === 'Male') title = 'Mr';
-    else title = 'Mr';
-  }
-
   const cleanTitle = title.replace(/\.$/, '');
   const nameDisplay = [cleanTitle, firstName, lastName].filter(Boolean).join(' ');
-  return nameDisplay || customer.name || 'Not provided';
+  return nameDisplay || customer.name || '';
 }
 
 function getCustomerForm(customer) {
@@ -84,86 +70,77 @@ function getCustomerForm(customer) {
 
   return {
     ...savedForm,
-    leadId: savedForm.leadId || customer.leadId || 'LED-2024-0982',
-    panCard: savedForm.panCard || customer.panCard || 'ABCDE1234F',
-    branch: savedForm.branch || customer.branch || 'Main Branch',
-    title: savedForm.title || customer.title || (customer.id === 'CUS-2024-00841' ? 'Mr' : customer.id === 'CUS-2024-00798' ? 'Ms' : 'Mr'),
+    leadId: savedForm.leadId || customer.leadId || '',
+    panCard: savedForm.panCard || customer.panCard || '',
+    branch: savedForm.branch || customer.branch || '',
+    title: savedForm.title || customer.title || '',
     fullName: savedForm.fullName || firstName || '',
     middleName: savedForm.middleName || '',
     lastName: savedForm.lastName || lastNameParts.join(' ') || '',
-    dob: savedForm.dob || '1992-05-14',
-    age: savedForm.age || '32',
-    fatherName: savedForm.fatherName || 'Suresh Mehta',
-    motherName: savedForm.motherName || 'Kavita Mehta',
-    email: savedForm.email || customer.email || (customer.id === 'CUS-2024-00841' ? 'rohan.mehta@example.com' : 'customer@example.com'),
-    customerType: normalizeCustomerType(savedForm.customerType || customer.type, savedForm.age || 32),
-    kycStatus: savedForm.kycStatus || customer.kyc || 'Verified',
-    aadhaarNumber: savedForm.aadhaarNumber || '987654321098',
-    gender: savedForm.gender || 'Male',
-    kycRegn: savedForm.kycRegn || '10023456789012',
-    maritalStatus: savedForm.maritalStatus || 'Married',
-    mobileNo: savedForm.mobileNo || customer.phone || '+91 98765 42148',
-    alternateContact: savedForm.alternateContact || '+91 98200 11223',
-    occupation: savedForm.occupation || 'Salaried Professional',
-    residentialStatus: savedForm.residentialStatus || 'Resident Individual',
-    residentialType: savedForm.residentialType || 'Owned',
-    flatBuildingName: savedForm.flatBuildingName || 'Flat 402, Green Heights',
-    streetRoad: savedForm.streetRoad || 'MG Road, Andheri West',
-    landMark: savedForm.landMark || 'Near City Mall',
-    city: savedForm.city || 'Mumbai',
-    state: savedForm.state || 'Maharashtra',
-    pinCode: savedForm.pinCode || '400053',
-    employmentType: savedForm.employmentType || 'Salaried',
-    loanCategory: savedForm.loanCategory || 'Retail',
-    designation: savedForm.designation || 'Senior Software Engineer',
-    employerName: savedForm.employerName || 'Tata Consultancy Services',
-    dateOfJoining: savedForm.dateOfJoining || '2018-04-10',
-    qualification: savedForm.qualification || 'Post Graduate',
-    empEmailId: savedForm.empEmailId || 'rohan.m@tcs-corp.example',
-    location: savedForm.location || 'Mumbai',
-    dateOfRetirement: savedForm.dateOfRetirement || '2052-05-31',
-    appointmentLetter: savedForm.appointmentLetter || { name: 'tcs_appointment_letter.pdf' },
-    annualIncome: savedForm.annualIncome || '1450000',
-    incomeTaxFilerStatus: savedForm.incomeTaxFilerStatus || 'Filer',
-    bankName: savedForm.bankName || 'HDFC Bank',
-    bankAccountNo: savedForm.bankAccountNo || '50100456789123',
-    riskCategory: savedForm.riskCategory || 'Low',
-    salaryCertificate: savedForm.salaryCertificate || { name: 'salary_certificate_mar2024.pdf' },
-    formNo16: savedForm.formNo16 || { name: 'form_16_ay2024_25.pdf' },
-    documents: Array.isArray(savedForm.documents) && savedForm.documents.length
-      ? savedForm.documents
-      : [
-          { name: 'PAN Card', file: { name: 'pan_card.pdf' }, expiryDate: '—', remarks: 'Verified via NSDL' },
-          { name: 'Aadhaar Card', file: { name: 'aadhaar_card.pdf' }, expiryDate: '—', remarks: 'UIDAI e-KYC Verified' },
-          { name: 'Salary Slip (3 Months)', file: { name: 'salary_slips_q1.pdf' }, expiryDate: '—', remarks: 'Bank Verified' },
-          { name: 'Electricity Bill', file: { name: 'utility_bill_mar.pdf' }, expiryDate: '2024-12-31', remarks: 'Address Proof Verified' },
-        ],
-    taxReturns: Array.isArray(savedForm.taxReturns) && savedForm.taxReturns.length
-      ? savedForm.taxReturns
-      : [
-          { financialYear: '2023-24', grossIncome: '1450000', tdsPaid: '95000' },
-          { financialYear: '2022-23', grossIncome: '1320000', tdsPaid: '84000' },
-        ],
-    previousEmployment: Array.isArray(savedForm.previousEmployment) && savedForm.previousEmployment.length
-      ? savedForm.previousEmployment
-      : [
-          {
-            employmentType: 'Salaried',
-            employerName: 'Infosys Limited',
-            designation: 'Software Engineer',
-            location: 'Pune',
-            dateOfJoining: '2015-07-01',
-            dateOfRelieving: '2018-03-31',
-          },
-        ],
-    loanHistory: Array.isArray(savedForm.loanHistory) && savedForm.loanHistory.length
-      ? savedForm.loanHistory
-      : getCustomerLoanHistory(customer.id, api.applications),
+    dob: savedForm.dob || '',
+    age: savedForm.age || '',
+    fatherName: savedForm.fatherName || [savedForm.fatherFirstName, savedForm.fatherMiddleName, savedForm.fatherLastName].filter(Boolean).join(' '),
+    motherName: savedForm.motherName || [savedForm.motherFirstName, savedForm.motherMiddleName, savedForm.motherLastName].filter(Boolean).join(' '),
+    email: savedForm.email || customer.email || '',
+    customerType: savedForm.customerType || customer.type || '',
+    kycStatus: savedForm.kycStatus || customer.kyc || '',
+    aadhaarNumber: savedForm.aadhaarNumber || customer.aadhaarNumber || '',
+    gender: savedForm.gender || '',
+    kycRegn: savedForm.kycRegn || '',
+    maritalStatus: savedForm.maritalStatus || '',
+    mobileNo: savedForm.mobileNo || customer.phone || '',
+    alternateContact: savedForm.alternateContact || '',
+    occupation: savedForm.occupation || '',
+    residentialStatus: savedForm.residentialStatus || '',
+    residentialType: savedForm.residentialType || '',
+    flatBuildingName: savedForm.flatBuildingName || '',
+    streetRoad: savedForm.streetRoad || '',
+    landMark: savedForm.landMark || '',
+    city: savedForm.city || '',
+    state: savedForm.state || '',
+    pinCode: savedForm.pinCode || '',
+    employmentType: savedForm.employmentType || '',
+    employerType: savedForm.employerType || '',
+    loanCategory: savedForm.loanCategory || '',
+    designation: savedForm.designation || '',
+    employerName: savedForm.employerName || '',
+    dateOfJoining: savedForm.dateOfJoining || '',
+    qualification: savedForm.qualification || '',
+    empEmailId: savedForm.empEmailId || '',
+    listedStatus: savedForm.listedStatus || '',
+    yearsOfService: savedForm.yearsOfService || '',
+    location: savedForm.location || '',
+    dateOfRetirement: savedForm.dateOfRetirement || '',
+    appointmentLetter: savedForm.appointmentLetter || null,
+    annualIncome: savedForm.annualIncome || '',
+    otherSourceIncome: savedForm.otherSourceIncome || '',
+    totalGrossIncome: savedForm.totalGrossIncome || '',
+    totalNetIncome: savedForm.totalNetIncome || '',
+    incomeTax: savedForm.incomeTax || '',
+    incomeTaxFilerStatus: savedForm.incomeTaxFilerStatus || '',
+    bankName: savedForm.bankName || '',
+    bankAccountNo: savedForm.bankAccountNo || '',
+    bankAccountType: savedForm.bankAccountType || '',
+    bankAccountStatus: savedForm.bankAccountStatus || '',
+    riskCategory: savedForm.riskCategory || '',
+    salaryCertificate: savedForm.salaryCertificate || null,
+    formNo16: savedForm.formNo16 || null,
+    documents: Array.isArray(savedForm.documents) ? savedForm.documents : [],
+    taxReturns: Array.isArray(savedForm.taxReturns) ? savedForm.taxReturns : [],
+    previousEmployment: Array.isArray(savedForm.previousEmployment)
+      ? savedForm.previousEmployment.filter((row) => Object.values(row).some((value) => String(value ?? '').trim()))
+      : [],
+    loanHistory: Array.isArray(savedForm.loanHistory)
+      ? savedForm.loanHistory.filter((loan) => Object.entries(loan).some(([key, value]) =>
+        !['id', 'source'].includes(key) && String(value ?? '').trim()
+      ))
+      : [],
+    references: Array.isArray(savedForm.references) ? savedForm.references : [],
   };
 }
 
 function displayValue(value, label = '') {
-  if (value === undefined || value === null || String(value).trim() === '') return 'Not Provided';
+  if (value === undefined || value === null || String(value).trim() === '') return '';
   if (typeof value === 'object' && typeof value.name === 'string') return value.name;
   if (/date|joining|relieving|retirement|dob/i.test(label) && String(value).includes('-')) {
     const date = new Date(`${value}T00:00:00`);
@@ -179,7 +156,7 @@ function displayValue(value, label = '') {
 }
 
 function DetailCard({ label, value, isFile = false }) {
-  const isPresentFile = isFile && value && value !== 'Not Provided' && value !== 'Not Uploaded';
+  const isPresentFile = isFile && value;
 
   return (
     <div className="view-detail-box">
@@ -232,9 +209,9 @@ export default function CustomerProfileView({ customerId }) {
 
   const form = customer ? getCustomerForm(customer) : null;
   const customerName = customer ? formatDisplayCustomerName(customer) : 'Customer Profile';
-  const customerPhone = customer?.phone || form?.mobileNo || 'Not provided';
-  const customerEmail = customer?.email || form?.email || 'Not provided';
-  const kycStatus = form?.kycStatus || customer?.kyc || 'Pending';
+  const customerPhone = customer?.phone || form?.mobileNo || '';
+  const customerEmail = customer?.email || form?.email || '';
+  const kycStatus = form?.kycStatus || customer?.kyc || '';
   const activeLoans = customer?.activeLoans ?? (form?.loanHistory?.length || 0);
 
   return (
@@ -243,8 +220,14 @@ export default function CustomerProfileView({ customerId }) {
         {/* Top Header Row matching Edit with exact green back button */}
         <div className="customer-view-top-header">
           <div>
-            <h1 className="customer-view-main-title">View Individual Customer</h1>
-            <p className="customer-view-sub-id">Customer ID: {customerId}</p>
+            <p className="customer-view-sub-id">
+              <span>Customer ID: {customerId}</span>
+              {kycStatus ? (
+                <span className={`kyc-badge ${kycStatus === 'Verified' ? 'verified' : 'pending'}`}>
+                  {kycStatus}
+                </span>
+              ) : null}
+            </p>
           </div>
           <Link
             href="/customer_management"
@@ -287,20 +270,12 @@ export default function CustomerProfileView({ customerId }) {
                 <strong>{customerPhone}</strong>
               </div>
               <div className="customer-view-summary-tile">
-                <span><UserCheck size={14} aria-hidden="true" /> Customer Type</span>
-                <strong>{form?.customerType || customer?.type || 'Individual'}</strong>
-              </div>
-              <div className="customer-view-summary-tile">
                 <span><Mail size={14} aria-hidden="true" /> Email Address</span>
                 <strong>{customerEmail}</strong>
               </div>
               <div className="customer-view-summary-tile">
-                <span><ShieldCheck size={14} aria-hidden="true" /> KYC Status</span>
-                <strong>
-                  <span className={`kyc-badge ${kycStatus === 'Verified' ? 'verified' : 'pending'}`}>
-                    {kycStatus}
-                  </span>
-                </strong>
+                <span><UserCheck size={14} aria-hidden="true" /> Customer Type</span>
+                <strong>{form?.customerType || customer?.type || ''}</strong>
               </div>
               <div className="customer-view-summary-tile">
                 <span><Banknote size={14} aria-hidden="true" /> Active Loans</span>
@@ -366,7 +341,7 @@ export default function CustomerProfileView({ customerId }) {
                     <div className="customer-view-grid four-col">
                       <DetailCard label="Title" value={form.title} />
                       <DetailCard label="First Name" value={form.fullName} />
-                      <DetailCard label="Middle Name" value={form.middleName || 'Not Provided'} />
+                      <DetailCard label="Middle Name" value={form.middleName} />
                       <DetailCard label="Last Name" value={form.lastName} />
                     </div>
                   </div>
@@ -377,9 +352,25 @@ export default function CustomerProfileView({ customerId }) {
                     </div>
                     <div className="customer-view-grid three-col">
                       <DetailCard label="Date of Birth" value={form.dob} />
-                      <DetailCard label="Age" value={form.age ? `${form.age} years` : '—'} />
+                      <DetailCard label="Age" value={form.age ? `${form.age} years` : ''} />
                       <DetailCard label="Father's / Husband's Name" value={form.fatherName} />
+                      <DetailCard label="Father's / Husband's Title" value={form.fatherTitle} />
+                      <DetailCard label="Father's / Husband's First Name" value={form.fatherFirstName} />
+                      <DetailCard label="Father's / Husband's Middle Name" value={form.fatherMiddleName} />
+                      <DetailCard label="Father's / Husband's Last Name" value={form.fatherLastName} />
                       <DetailCard label="Mother's Name" value={form.motherName} />
+                      <DetailCard label="Mother's Title" value={form.motherTitle} />
+                      <DetailCard label="Mother's First Name" value={form.motherFirstName} />
+                      <DetailCard label="Mother's Middle Name" value={form.motherMiddleName} />
+                      <DetailCard label="Mother's Last Name" value={form.motherLastName} />
+                      <DetailCard
+                        label="Spouse's Name"
+                        value={[form.spouseFirstName, form.spouseMiddleName, form.spouseLastName].filter(Boolean).join(' ')}
+                      />
+                      <DetailCard label="Spouse's Title" value={form.spouseTitle} />
+                      <DetailCard label="Spouse's First Name" value={form.spouseFirstName} />
+                      <DetailCard label="Spouse's Middle Name" value={form.spouseMiddleName} />
+                      <DetailCard label="Spouse's Last Name" value={form.spouseLastName} />
                       <DetailCard label="Email ID" value={form.email} />
                       <DetailCard label="Customer Type" value={form.customerType} />
                       <DetailCard label="KYC Status" value={form.kycStatus} />
@@ -387,7 +378,7 @@ export default function CustomerProfileView({ customerId }) {
                       <DetailCard label="CKYC Registration" value={form.kycRegn} />
                       <DetailCard label="Gender" value={form.gender} />
                       <DetailCard label="Mobile Number" value={form.mobileNo} />
-                      <DetailCard label="Alternate Contact" value={form.alternateContact || '—'} />
+                      <DetailCard label="Alternate Contact" value={form.alternateContact} />
                       <DetailCard label="Occupation" value={form.occupation} />
                       <DetailCard label="Marital Status" value={form.maritalStatus} />
                     </div>
@@ -415,7 +406,7 @@ export default function CustomerProfileView({ customerId }) {
                     <div className="customer-view-grid three-col">
                       <DetailCard label="Flat / Building Name" value={form.flatBuildingName} />
                       <DetailCard label="Street / Road" value={form.streetRoad} />
-                      <DetailCard label="Landmark" value={form.landMark || '—'} />
+                      <DetailCard label="Landmark" value={form.landMark} />
                       <DetailCard label="City" value={form.city} />
                       <DetailCard label="State" value={form.state} />
                       <DetailCard label="PIN Code" value={form.pinCode} />
@@ -433,12 +424,15 @@ export default function CustomerProfileView({ customerId }) {
                     </div>
                     <div className="customer-view-grid three-col">
                       <DetailCard label="Employment Type" value={form.employmentType} />
+                      <DetailCard label="Employer Type" value={form.employerType} />
                       <DetailCard label="Loan Category" value={form.loanCategory} />
                       <DetailCard label="Designation / Nature of Business" value={form.designation} />
                       <DetailCard label="Employer / Business Name" value={form.employerName} />
                       <DetailCard label="Date of Joining / Business Start" value={form.dateOfJoining} />
                       <DetailCard label="Qualification" value={form.qualification} />
-                      <DetailCard label="Employee / Business Email" value={form.empEmailId || '—'} />
+                      <DetailCard label="No. of Years of Service" value={form.yearsOfService} />
+                      <DetailCard label="Listed Status" value={form.listedStatus} />
+                      <DetailCard label="Employee / Business Email" value={form.empEmailId} />
                       <DetailCard label="Employer / Business Location" value={form.location} />
                       <DetailCard label="Date of Retirement" value={form.dateOfRetirement} />
                       <DetailCard label="Appointment Letter" value={form.appointmentLetter} isFile />
@@ -467,10 +461,10 @@ export default function CustomerProfileView({ customerId }) {
                             {form.previousEmployment.map((row, index) => (
                               <tr key={index}>
                                 <td className="row-sr">{index + 1}</td>
-                                <td>{row.employmentType || '—'}</td>
-                                <td><strong>{row.employerName || '—'}</strong></td>
-                                <td>{row.designation || '—'}</td>
-                                <td>{row.location || '—'}</td>
+                                <td>{row.employmentType || ''}</td>
+                                <td><strong>{row.employerName || ''}</strong></td>
+                                <td>{row.designation || ''}</td>
+                                <td>{row.location || ''}</td>
                                 <td>{displayValue(row.dateOfJoining, 'Date')}</td>
                                 <td>{displayValue(row.dateOfRelieving, 'Date')}</td>
                               </tr>
@@ -494,9 +488,15 @@ export default function CustomerProfileView({ customerId }) {
                     </div>
                     <div className="customer-view-grid three-col">
                       <DetailCard label="Annual Income" value={form.annualIncome} />
+                      <DetailCard label="Other Source of Income" value={form.otherSourceIncome} />
+                      <DetailCard label="Total Gross Income" value={form.totalGrossIncome} />
+                      <DetailCard label="Total Net Income" value={form.totalNetIncome} />
+                      <DetailCard label="Income Tax" value={form.incomeTax} />
                       <DetailCard label="Income Tax Filer Status" value={form.incomeTaxFilerStatus} />
                       <DetailCard label="Bank Name" value={form.bankName} />
                       <DetailCard label="Bank Account Number" value={form.bankAccountNo} />
+                      <DetailCard label="A/C Type" value={form.bankAccountType} />
+                      <DetailCard label="A/C Status" value={form.bankAccountStatus} />
                       <DetailCard label="Risk Category" value={form.riskCategory} />
                       <DetailCard label="Salary Certificate" value={form.salaryCertificate} isFile />
                       <DetailCard label="Form 16 Document" value={form.formNo16} isFile />
@@ -523,7 +523,7 @@ export default function CustomerProfileView({ customerId }) {
                               {form.taxReturns.map((tax, index) => (
                                 <tr key={index}>
                                   <td className="row-sr">{index + 1}</td>
-                                  <td><strong>{tax.financialYear || '—'}</strong></td>
+                                  <td><strong>{tax.financialYear || ''}</strong></td>
                                   <td style={{ textAlign: 'right' }}>{displayValue(tax.grossIncome, 'income')}</td>
                                   <td style={{ textAlign: 'right' }}>{displayValue(tax.tdsPaid, 'tds')}</td>
                                 </tr>
@@ -561,7 +561,7 @@ export default function CustomerProfileView({ customerId }) {
                           {form.documents.map((doc, index) => (
                             <tr key={index}>
                               <td className="row-sr">{index + 1}</td>
-                              <td><strong>{doc.name || '—'}</strong></td>
+                              <td><strong>{doc.name || ''}</strong></td>
                               <td>
                                 {doc.file ? (
                                   <span className="view-file-pill">
@@ -569,10 +569,10 @@ export default function CustomerProfileView({ customerId }) {
                                     <span>{typeof doc.file === 'object' ? doc.file.name : String(doc.file)}</span>
                                   </span>
                                 ) : (
-                                  <span style={{ color: '#90a4a8', fontSize: '12px' }}>Not Uploaded</span>
+                                  <span style={{ color: '#90a4a8', fontSize: '12px' }} />
                                 )}
                               </td>
-                              <td>{doc.expiryDate || '—'}</td>
+                              <td>{doc.expiryDate || ''}</td>
                               <td>
                                 <span className="view-doc-status-pill">
                                   {doc.remarks || 'Verified'}
@@ -613,9 +613,9 @@ export default function CustomerProfileView({ customerId }) {
                           {form.loanHistory.map((loan, index) => (
                             <tr key={index}>
                               <td className="row-sr">{index + 1}</td>
-                              <td><strong>{loan.bankName || '—'}</strong></td>
-                              <td>{loan.accountNumber || '—'}</td>
-                              <td>{loan.loanType || '—'}</td>
+                              <td><strong>{loan.bankName || ''}</strong></td>
+                              <td>{loan.accountNumber || ''}</td>
+                              <td>{loan.loanType || ''}</td>
                               <td style={{ textAlign: 'right' }}>{displayValue(loan.totalOutstanding, 'outstanding')}</td>
                               <td style={{ textAlign: 'right' }}>{displayValue(loan.emi, 'emi')}</td>
                               <td>{displayValue(loan.expiryDate, 'date')}</td>
@@ -626,6 +626,45 @@ export default function CustomerProfileView({ customerId }) {
                     </div>
                   ) : (
                     <p className="customer-view-empty">No loan history records provided for this customer.</p>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'references' && (
+                <div className="customer-view-section-card">
+                  <div className="customer-view-section-header">
+                    <h2>References</h2>
+                    <p>References provided for future contact.</p>
+                  </div>
+                  {form.references && form.references.length > 0 ? (
+                    <div className="customer-view-table-wrap">
+                      <table className="customer-view-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: 45 }}>Sr.</th>
+                            <th>Name of the Reference</th>
+                            <th>Relation</th>
+                            <th>Location</th>
+                            <th>Contact No.</th>
+                            <th>Email ID</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {form.references.map((reference, index) => (
+                            <tr key={`reference-${index}`}>
+                              <td className="row-sr">{index + 1}</td>
+                              <td><strong>{displayValue(reference.referenceName)}</strong></td>
+                              <td>{displayValue(reference.relation)}</td>
+                              <td>{displayValue(reference.location)}</td>
+                              <td>{displayValue(reference.contactNo)}</td>
+                              <td>{displayValue(reference.email)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="customer-view-empty">No references provided.</p>
                   )}
                 </div>
               )}
@@ -661,6 +700,9 @@ export default function CustomerProfileView({ customerId }) {
         }
 
         .customer-view-sub-id {
+          display: flex;
+          align-items: center;
+          gap: 10px;
           margin: 4px 0 0;
           color: #177e7a;
           font-size: 13px;
@@ -685,7 +727,7 @@ export default function CustomerProfileView({ customerId }) {
         /* 6-Tile Summary Header */
         .customer-view-summary {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(3, minmax(0, 2fr)) repeat(2, minmax(0, 1fr));
           gap: 12px;
           margin-bottom: 20px;
         }
@@ -725,7 +767,7 @@ export default function CustomerProfileView({ customerId }) {
           color: #6f858a;
           font-size: 11px;
           font-weight: 600;
-          text-transform: uppercase;
+          text-transform: none;
           letter-spacing: 0.03em;
         }
 
@@ -739,6 +781,8 @@ export default function CustomerProfileView({ customerId }) {
         .kyc-badge {
           display: inline-flex;
           align-items: center;
+          align-self: flex-start;
+          width: fit-content;
           padding: 2px 8px;
           border-radius: 12px;
           font-size: 11px;
@@ -764,9 +808,9 @@ export default function CustomerProfileView({ customerId }) {
           margin-bottom: 20px;
           padding: 4px;
           overflow-x: auto;
-          border: 1px solid #e2ebeb;
+          border: 1px solid #368262;
           border-radius: 9px;
-          background: #f8fbfa;
+          background: #fff;
           scrollbar-width: thin;
         }
 
@@ -777,9 +821,9 @@ export default function CustomerProfileView({ customerId }) {
           flex: 0 0 auto;
           min-height: 38px;
           padding: 8px 14px;
-          border: 1px solid transparent;
+          border: 1px solid #c8e5d2;
           border-radius: 6px;
-          background: transparent;
+          background: #fff;
           color: #60757b;
           font-family: inherit;
           font-size: 12.5px;
@@ -880,7 +924,7 @@ export default function CustomerProfileView({ customerId }) {
           color: #6f878d;
           font-size: 11px;
           font-weight: 600;
-          text-transform: uppercase;
+          text-transform: none;
           letter-spacing: 0.04em;
         }
 
@@ -892,8 +936,8 @@ export default function CustomerProfileView({ customerId }) {
 
         .view-detail-value {
           color: #1d3b48;
-          font-size: 13.5px;
-          font-weight: 700;
+          font-size: 14.5px;
+          font-weight: 500;
           line-height: 1.4;
           overflow-wrap: anywhere;
         }
@@ -947,7 +991,7 @@ export default function CustomerProfileView({ customerId }) {
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.04em;
-          text-transform: uppercase;
+          text-transform: none;
           white-space: nowrap;
         }
 

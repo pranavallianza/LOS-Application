@@ -2937,7 +2937,8 @@ td strong {
   text-overflow: ellipsis;
   max-width: 120px;
 }
-.loan-data-table td input {
+.loan-data-table td input,
+.loan-data-table td select {
   width: 100%;
   min-height: 32px;
   border: 1px solid #dfe8eb;
@@ -4007,6 +4008,237 @@ td strong {
 }
 .loan-file-input span {
   max-width: 170px;
+}
+
+/* Employment section controls */
+.customer-onboarding-shell .loan-upload-row .loan-file-input {
+  width: fit-content;
+  min-width: 116px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border-color: #c6dacf;
+  background: #fff;
+  color: #368262;
+}
+.customer-onboarding-shell .loan-upload-row .loan-file-input svg {
+  color: #368262;
+}
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table {
+  border: 0;
+}
+.customer-onboarding-shell .previous-employment-table-frame {
+  overflow: hidden;
+  border: 1px solid #c8e5d2;
+  border-radius: 12px;
+  background: #fff;
+}
+.customer-onboarding-shell .previous-employment-table-frame .loan-data-table thead tr:first-child th {
+  border-top: 0;
+}
+.customer-onboarding-shell .previous-employment-table-frame .loan-data-table th:first-child,
+.customer-onboarding-shell .previous-employment-table-frame .loan-data-table td:first-child {
+  border-left: 0;
+}
+.customer-onboarding-shell .previous-employment-table-frame .loan-data-table th:last-child,
+.customer-onboarding-shell .previous-employment-table-frame .loan-data-table td:last-child {
+  border-right: 0;
+}
+.customer-onboarding-shell .previous-employment-table-frame .loan-data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table th,
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table td {
+  border-color: #c8e5d2;
+}
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table th {
+  background: #f8fbf9;
+}
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table td {
+  background: #fff;
+}
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table td input,
+.customer-onboarding-shell .previous-employment-table-wrap .lead-date-picker-trigger {
+  border-color: #c8e5d2;
+  border-radius: 8px;
+  background: #fff;
+}
+.customer-onboarding-shell .previous-employment-table-wrap .loan-data-table td input:focus,
+.customer-onboarding-shell .previous-employment-table-wrap .lead-date-picker-trigger:focus {
+  border-color: #368262;
+  border-radius: 8px;
+  outline: none;
+  box-shadow: none;
+}
+.customer-onboarding-shell .previous-employment-add-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: fit-content;
+  height: auto;
+  margin-top: 10px;
+  margin-left: auto;
+  padding: 7px 12px;
+  border-color: #c8e5d2;
+  background: #fff;
+  color: #368262;
+}
+.customer-onboarding-shell .previous-employment-add-button:hover {
+  border-color: #c8e5d2;
+  background: #fff;
+  color: #368262;
+}
+.customer-onboarding-shell .loan-form-actions .loan-back-button {
+  box-sizing: border-box;
+  height: 36px;
+  min-width: 112px;
+  width: auto;
+  padding: 0 14px;
+  gap: 6px;
+  border-radius: 7px;
+  font-size: 13px;
+}
+@media (max-width: 920px) {
+  .customer-onboarding-shell .loan-form-actions .loan-back-button {
+    width: 100%;
+  }
+}
+.customer-onboarding-shell .loan-history-table-wrap .loan-data-table td input,
+.customer-onboarding-shell .loan-history-table-wrap .lead-date-picker-trigger {
+  border-color: #c6dacf;
+  background: #fff;
+}
+.customer-onboarding-shell .loan-history-table-wrap .loan-data-table th {
+  background: #f8fbf9;
+}
+.customer-onboarding-shell .loan-history-table-wrap .loan-data-table td {
+  background: #fff;
+}
+.customer-onboarding-shell .loan-history-table-wrap .loan-data-table td input:hover,
+.customer-onboarding-shell .loan-history-table-wrap .loan-data-table td input:focus,
+.customer-onboarding-shell .loan-history-table-wrap .lead-date-picker-trigger:hover,
+.customer-onboarding-shell .loan-history-table-wrap .lead-date-picker-trigger:focus {
+  border-color: #c6dacf;
+  background: #fff;
+  outline: none;
+  box-shadow: none;
+}
+.customer-onboarding-shell .loan-history-add-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin: 12px 0 0 auto;
+  padding: 7px 12px;
+  border-color: #c6dacf;
+  background: #fff;
+  color: #36525d;
+}
+.customer-onboarding-shell .loan-history-add-button:hover {
+  border-color: #c6dacf;
+  background: #fff;
+  color: #36525d;
+}
+.customer-onboarding-shell .income-bank-details {
+  margin: 8px 0 18px;
+  padding: 16px;
+  border: 1px solid #c6dacf;
+  border-radius: 10px;
+  background: #f8fbf9;
+}
+.customer-onboarding-shell .income-bank-details h3 {
+  margin: 0 0 14px;
+  color: #1d3b4d;
+  font-size: 16px;
+}
+.customer-onboarding-shell .income-bank-details .bank-account-fields {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+.customer-onboarding-shell .income-proof-uploads {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: start;
+  column-gap: 28px;
+  margin-top: 4px;
+}
+.customer-onboarding-shell .income-proof-uploads .loan-upload-row {
+  grid-column: auto;
+  width: fit-content;
+}
+.customer-onboarding-shell .reference-instructions {
+  margin: 0 0 16px;
+  color: #36525d;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame {
+  overflow: hidden;
+  border: 1px solid #c8e5d2;
+  border-radius: 12px;
+  background: #fff;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table {
+  border: 0;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table thead tr:first-child th {
+  border-top: 0;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table th:first-child,
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td:first-child {
+  border-left: 0;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table th:last-child,
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td:last-child {
+  border-right: 0;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table th,
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td {
+  border-color: #c8e5d2;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table th {
+  background: #f8fbf9;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td {
+  background: #fff;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td input,
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td select,
+.customer-onboarding-shell .onboarding-rounded-table-frame .lead-date-picker-trigger {
+  border: 1px solid #c8e5d2;
+  border-radius: 8px;
+  background: #fff;
+}
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td input:focus,
+.customer-onboarding-shell .onboarding-rounded-table-frame .loan-data-table td select:focus,
+.customer-onboarding-shell .onboarding-rounded-table-frame .lead-date-picker-trigger:focus {
+  border-color: #368262;
+  outline: none;
+  box-shadow: none;
+}
+.customer-onboarding-shell .document-table-wrap .loan-table-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+@media (max-width: 600px) {
+  .customer-onboarding-shell .income-proof-uploads {
+    grid-template-columns: max-content;
+    row-gap: 16px;
+  }
+}
+@media (max-width: 920px) {
+  .customer-onboarding-shell .income-bank-details .bank-account-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .customer-onboarding-shell .income-bank-details .bank-account-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .app-shell {
