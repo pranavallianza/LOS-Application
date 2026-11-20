@@ -55,8 +55,10 @@
 .lookup-heading h1 {
   margin: 0;
   color: #183f48;
-  font: 700 28px/1.2 Manrope, sans-serif;
-  letter-spacing: -.7px;
+  font:
+    700 28px/1.2 Manrope,
+    sans-serif;
+  letter-spacing: -0.7px;
 }
 
 .lookup-subtitle,
@@ -104,8 +106,10 @@
 .lookup-list-heading h2 {
   margin: 0;
   color: var(--lookup-ink);
-  font: 700 16px/1.35 Manrope, sans-serif;
-  letter-spacing: -.2px;
+  font:
+    700 16px/1.35 Manrope,
+    sans-serif;
+  letter-spacing: -0.2px;
 }
 
 .lookup-tabs {
@@ -179,7 +183,9 @@
   padding: 9px 10px;
   color: var(--lookup-ink);
   font-size: 12px;
-  transition: border-color .15s, box-shadow .15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .lookup-field input,
@@ -211,7 +217,7 @@
 .lookup-field input[readonly] {
   background: var(--lookup-soft);
   color: var(--lookup-muted);
-  cursor: not-allowed;
+  cursor: default;
 }
 
 .lookup-field [aria-invalid="true"] {
@@ -367,7 +373,7 @@
   color: #8290a0;
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: .65px;
+  letter-spacing: 0.65px;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -429,7 +435,7 @@
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: .1px;
+  letter-spacing: 0.1px;
   white-space: nowrap;
 }
 
@@ -520,7 +526,7 @@
   background: #b9c2cc;
   padding: 0;
   cursor: pointer;
-  transition: background .15s;
+  transition: background 0.15s;
 }
 
 .lookup-toggle.on {
@@ -536,7 +542,7 @@
   border-radius: 50%;
   background: white;
   box-shadow: 0 1px 2px rgb(0 0 0 / 17%);
-  transition: transform .15s;
+  transition: transform 0.15s;
 }
 
 .lookup-toggle.on span {
@@ -544,7 +550,7 @@
 }
 
 .lookup-toggle.small {
-  transform: scale(.86);
+  transform: scale(0.86);
   transform-origin: center;
 }
 
@@ -604,7 +610,10 @@
 
 .lookup-sub-row {
   display: grid;
-  grid-template-columns: minmax(110px, .8fr) minmax(100px, .8fr) minmax(160px, 1.5fr) 82px 116px;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(100px, 0.8fr) minmax(
+      160px,
+      1.5fr
+    ) 82px 116px;
   align-items: center;
   gap: 10px;
   min-height: 39px;
@@ -712,7 +721,7 @@
 }
 
 .lookup-pagination button:disabled {
-  opacity: .4;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -756,7 +765,10 @@
   }
 
   .lookup-sub-row {
-    grid-template-columns: minmax(100px, .8fr) minmax(90px, .7fr) minmax(130px, 1.2fr) 77px 112px;
+    grid-template-columns: minmax(100px, 0.8fr) minmax(90px, 0.7fr) minmax(
+        130px,
+        1.2fr
+      ) 77px 112px;
     gap: 7px;
   }
 }
