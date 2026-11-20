@@ -30,7 +30,8 @@ import PageHeader from '../../components/PageHeader';
 import Card from '../../components/Card';
 import { PermissionGate } from '../../components/AccessControl';
 import { api } from '../../services/api.js';
-import { getLeads, getUsers } from '../../services/leadService';
+import { getLeads } from '../../services/localLeads';
+import { getUsers } from '../../services/leadService';
 
 const USERS_PER_PAGE = 5;
 

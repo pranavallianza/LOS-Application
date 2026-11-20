@@ -8,7 +8,7 @@ import PageHeader from '../../components/PageHeader';
 import NewLead from '../../components/NewLead';
 import CorporateLeadWizard from '../../components/CorporateLeadWizard';
 import LeadDetails from '../../components/LeadDetails';
-import { getLeads, saveLeads } from '../../services/leadService';
+import { getLeads, saveLeads } from '../../services/localLeads';
 
 const leadTableColumns = [
     ['srNo', 'Sr. No.'],
@@ -200,7 +200,8 @@ const normalizeLeadRecord = (lead) => {
 };
 
 const leadManagementStyles = `
-.lm-page{max-width:1480px;margin:0 auto;padding:4px 0 28px;color:#20383a;font-family:var(--font-sans,inherit)}
+.los-page-wrap{width:100%;max-width:none;padding-right:24px;padding-left:24px;box-sizing:border-box}
+.lm-page{display:block;width:100%;max-width:none;margin:0;padding:4px 0 28px;box-sizing:border-box;color:#20383a;font-family:var(--font-sans,inherit)}
 .lm-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:19px}
 .lm-page-header.page-header{margin-bottom:19px}
 .lm-heading-copy span{color:#748789;font-size:10px;font-weight:800;letter-spacing:.1em}
@@ -684,7 +685,7 @@ export function LeadManagementPage({ corporate = false }) {
             </label>
             <label className="lm-filter" htmlFor="lead-status-filter">Status
               <select id="lead-status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="All">All statuses</option>
+                <option value="All">All Status</option>
                 {['New', 'In Progress', 'Contacted', 'Qualified', 'On Hold', 'Rejected', 'Converted'].map((status) => <option key={status} value={status}>{status}</option>)}
               </select>
             </label>
