@@ -176,6 +176,7 @@ export default function LookupManagementPage() {
     setEditing(null);
     setErrors({});
     setForm({ ...emptyForm, lookupId: String(lookup.id) });
+    void loadLookupOptions(lookup);
     document
       .getElementById("lookup-form")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -539,9 +540,14 @@ export default function LookupManagementPage() {
                 <select
                   id="lookup-parent"
                   value={form.lookupId}
-                  onChange={(event) =>
-                    updateField("lookupId", event.target.value)
-                  }
+                  onChange={(event) => {
+                    const lookupId = event.target.value;
+                    updateField("lookupId", lookupId);
+                    const parent = lookups.find(
+                      (lookup) => String(lookup.id) === lookupId,
+                    );
+                    if (parent) void loadLookupOptions(parent);
+                  }}
                   aria-invalid={Boolean(errors.lookupId)}
                 >
                   <option value="">Select a lookup</option>
@@ -565,7 +571,7 @@ export default function LookupManagementPage() {
                 id="lookup-code"
                 value={form.code}
                 onChange={(event) => updateField("code", event.target.value)}
-                placeholder="e.g. Value"
+                placeholder={isSubTab ? "e.g. 1002701" : "e.g. 10027"}
                 autoComplete="off"
                 readOnly={isEditing}
                 aria-invalid={Boolean(errors.code)}
@@ -576,7 +582,9 @@ export default function LookupManagementPage() {
               <span className="lookup-hint">
                 {isEditing
                   ? "Code cannot be changed after creation."
-                  : "Codes are unique and should be integers."}
+                  : isSubTab
+                    ? "Enter a unique sublookup code."
+                    : "Codes are unique and should be integers."}
               </span>
             </div>
             <div className="lookup-field">
