@@ -56,12 +56,15 @@ export default function LeadDatePicker({
   invalid = false,
   emptyLabel = 'Select date',
   triggerStyle,
+  popupPlacement = 'below',
 }) {
   const containerRef = useRef(null);
+  const triggerRef = useRef(null);
   const popoverRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState(null);
   const useViewportPopover =
+    className.includes('document-expiry-date-picker') ||
     className.includes('previous-employment-date-picker') ||
     className.includes('loan-history-date-picker');
   const selectedDate = toCalendarDate(value);
@@ -106,8 +109,7 @@ export default function LeadDatePicker({
     }
 
     if (useViewportPopover) {
-      const trigger = containerRef.current?.querySelector('.lead-date-picker-trigger');
-      const rect = trigger?.getBoundingClientRect();
+      const rect = triggerRef.current?.getBoundingClientRect();
       if (rect) {
         const width = Math.min(350, window.innerWidth - 32);
         const estimatedHeight = 400;
@@ -178,6 +180,7 @@ export default function LeadDatePicker({
           aria-invalid={invalid || undefined}
           data-date-picker-trigger={name}
           disabled={disabled}
+          ref={triggerRef}
           style={triggerStyle}
           onClick={toggleCalendar}
         >

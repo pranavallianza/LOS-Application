@@ -2530,6 +2530,7 @@ export default function LoanApplicationPage() {
                               label="Document expiry date"
                               type="date"
                               datePickerName={`document-${index}-expiry-date`}
+                              datePickerClassName="document-expiry-date-picker"
                               value={row.expiryDate}
                               onChange={(value) =>
                                 updateArrayItem(

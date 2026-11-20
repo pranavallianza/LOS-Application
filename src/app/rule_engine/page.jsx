@@ -23,6 +23,13 @@ const DECISIONS = {
 };
 
 let uid = 100;
+const todayInputDate = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 const R = (param, op, a, b, decision, offset = 0) => ({
   id: ++uid,
   param,
@@ -32,6 +39,7 @@ const R = (param, op, a, b, decision, offset = 0) => ({
   decision,
   offset,
   active: true,
+  effectiveDate: todayInputDate(),
 });
 const SEED = [
   R("CIBIL Score", "lt", 400, "", "Reject"),
@@ -79,43 +87,15 @@ const sentence = (r) => {
         : `allow it and add ${r.offset === "" ? "?" : "+" + r.offset}% to the interest rate`;
   return `If ${when}, ${then}.`;
 };
-const matches = (r, v) => {
-  if (r.op === "eq") return v === r.a;
-  const n = Number(v),
-    a = Number(r.a),
-    b = Number(r.b);
-  return r.op === "lt" ? n < a : r.op === "gt" ? n > a : n >= a && n <= b;
-};
-function evaluate(rules, inputs) {
-  const hits = [];
-  Object.entries(inputs).forEach(([p, v]) => {
-    if (v === "" || v == null) return;
-    const rule = rules.find((r) => r.active && r.param === p && matches(r, v));
-    if (rule) hits.push(rule);
-  });
-  const rejected = hits.some((h) => h.decision === "Reject");
-  const offset = rejected
-    ? 0
-    : hits.reduce(
-        (s, h) => s + (h.decision === "Override" ? Number(h.offset) || 0 : 0),
-        0,
-      );
-  const outcome = rejected
-    ? "Reject"
-    : hits.some((h) => h.decision === "Override")
-      ? "Override"
-      : "Allow";
-  return { hits, outcome, offset };
-}
-
-const EMPTY = {
+const EMPTY = () => ({
   param: "CIBIL Score",
   op: "lt",
   a: "",
   b: "",
   decision: "Allow",
   offset: "",
-};
+  effectiveDate: todayInputDate(),
+});
 const Plus = () => (
   <svg
     width="16"
@@ -132,33 +112,38 @@ const Plus = () => (
 
 export default function RuleEngine() {
   const [rules, setRules] = useState(SEED);
-  const [tab, setTab] = useState("create");
   const [form, setForm] = useState(EMPTY);
-  const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [q, setQ] = useState("");
   const [fParam, setFParam] = useState("All");
   const [fDecision, setFDecision] = useState("All");
-  const [inputs, setInputs] = useState({});
 
   const isChoice = !!PARAMS[form.param].options;
   const say = (m) => {
     setToast(m);
     setTimeout(() => setToast(""), 2500);
   };
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k, v) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setError("");
+  };
   const changeParam = (param) => {
     const choice = !!PARAMS[param].options;
     setForm({
-      ...EMPTY,
+      ...EMPTY(),
       param,
       op: choice ? "eq" : "lt",
       a: choice ? PARAMS[param].options[0] : "",
     });
+    setError("");
   };
 
   const save = () => {
+    if (!form.effectiveDate)
+      return setError("Select an effective date for this rule.");
+    if (form.effectiveDate < todayInputDate())
+      return setError("Effective date cannot be in the past.");
     if (form.a === "" || (form.op === "between" && form.b === ""))
       return setError("Enter the value for this rule.");
     if (form.op === "between" && Number(form.a) >= Number(form.b))
@@ -170,32 +155,17 @@ export default function RuleEngine() {
       ...form,
       offset: form.decision === "Override" ? Number(form.offset) : 0,
     };
-    setRules((rs) =>
-      editId
-        ? rs.map((r) => (r.id === editId ? { ...r, ...rule } : r))
-        : [...rs, { ...rule, id: ++uid, active: true }],
-    );
-    say(editId ? "Rule updated" : "Rule created");
-    setForm(EMPTY);
-    setEditId(null);
-  };
-  const edit = (r) => {
-    setForm({ ...r });
-    setEditId(r.id);
-    setTab("create");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setRules((rs) => [...rs, { ...rule, id: ++uid, active: true }]);
+    say("Rule created");
+    setForm(EMPTY());
   };
   const remove = (id) => {
     setRules((rs) => rs.filter((r) => r.id !== id));
-    say("Rule deleted");
+    say("Rule removed");
   };
-  const toggle = (id) =>
-    setRules((rs) =>
-      rs.map((r) => (r.id === id ? { ...r, active: !r.active } : r)),
-    );
   const saveAll = () => {
     const payload = rules.map(
-      ({ id, param, op, a, b, decision, offset, active }) => ({
+      ({ id, param, op, a, b, decision, offset, active, effectiveDate }) => ({
         id,
         param,
         op,
@@ -204,6 +174,7 @@ export default function RuleEngine() {
         decision,
         offset,
         active,
+        effectiveDate,
       }),
     );
     console.log(payload); // TODO: await fetch("/api/rules", { method: "POST", body: JSON.stringify(payload) });
@@ -222,8 +193,6 @@ export default function RuleEngine() {
       ),
     [rules, q, fParam, fDecision],
   );
-  const result = useMemo(() => evaluate(rules, inputs), [rules, inputs]);
-
   return (
     <AppShell>
       <div className="rl-page">
@@ -239,31 +208,18 @@ export default function RuleEngine() {
         </header>
 
         <section className="rl-card">
-          <h2>{editId ? "Edit rule" : "Create a rule"}</h2>
+          <h2>Create a rule</h2>
           <p className="rl-sub">
-            Pick what to check, set the range, then choose what happens.
+            Pick what to check, set the range and effective date, then choose what happens.
           </p>
-          <div className="rl-tabs" role="tablist">
-            <button
-              role="tab"
-              aria-selected={tab === "create"}
-              className={tab === "create" ? "on" : ""}
-              onClick={() => setTab("create")}
+          <form
+              className="rl-create-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                save();
+              }}
+              noValidate
             >
-              Rule
-            </button>
-            <button
-              role="tab"
-              aria-selected={tab === "test"}
-              className={tab === "test" ? "on" : ""}
-              onClick={() => setTab("test")}
-            >
-              Test rules
-            </button>
-          </div>
-
-          {tab === "create" ? (
-            <>
               <div className="rl-grid">
                 <label className="span2">
                   Check *
@@ -328,6 +284,21 @@ export default function RuleEngine() {
                   </label>
                 )}
                 <label>
+                  Effective date *
+                  <input
+                    type="date"
+                    value={form.effectiveDate}
+                    min={todayInputDate()}
+                    required
+                    aria-invalid={Boolean(
+                      error &&
+                        (!form.effectiveDate ||
+                          form.effectiveDate < todayInputDate()),
+                    )}
+                    onChange={(e) => set("effectiveDate", e.target.value)}
+                  />
+                </label>
+                <label>
                   Then *
                   <select
                     value={form.decision}
@@ -363,83 +334,19 @@ export default function RuleEngine() {
                 </p>
               )}
               <div className="rl-actions">
-                {editId && (
-                  <button
-                    className="btn ghost"
-                    onClick={() => {
-                      setForm(EMPTY);
-                      setEditId(null);
-                      setError("");
-                    }}
-                  >
-                    Cancel
-                  </button>
-                )}
-                <button className="btn primary" onClick={save}>
+                <button className="btn primary" type="submit">
                   <Plus />
-                  {editId ? "Update rule" : "Create rule"}
+                  Create rule
                 </button>
               </div>
-            </>
-          ) : (
-            <div className="rl-test">
-              <div className="rl-grid">
-                {Object.entries(PARAMS).map(([p, cfg]) => (
-                  <label key={p}>
-                    {p}
-                    {cfg.options ? (
-                      <select
-                        value={inputs[p] || ""}
-                        onChange={(e) =>
-                          setInputs({ ...inputs, [p]: e.target.value })
-                        }
-                      >
-                        <option value="">Not provided</option>
-                        {cfg.options.map((o) => (
-                          <option key={o}>{o}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="number"
-                        value={inputs[p] ?? ""}
-                        onChange={(e) =>
-                          setInputs({ ...inputs, [p]: e.target.value })
-                        }
-                      />
-                    )}
-                  </label>
-                ))}
-              </div>
-              <div className={`rl-result ${result.outcome.toLowerCase()}`}>
-                <strong>
-                  {result.outcome === "Reject"
-                    ? "Application rejected"
-                    : result.outcome === "Override"
-                      ? `Approved with +${result.offset}% added to the rate`
-                      : "Application allowed"}
-                </strong>
-                {result.hits.length === 0 ? (
-                  <span>Enter values above to see which rules apply.</span>
-                ) : (
-                  <ul>
-                    {result.hits.map((h) => (
-                      <li key={h.id}>
-                        {h.param}: {label(h)} - {h.decision}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
+            </form>
         </section>
 
         <section className="rl-card flush">
           <div className="rl-listhead">
             <div>
               <h2>Rule list</h2>
-              <p className="rl-sub">Browse, edit or switch off rules.</p>
+              <p className="rl-sub">Browse and remove rules.</p>
             </div>
             <span className="rl-badge">{visible.length} records</span>
           </div>
@@ -484,13 +391,13 @@ export default function RuleEngine() {
                   <th>Result</th>
                   <th>Rule</th>
                   <th>Rate offset</th>
-                  <th>Active</th>
-                  <th className="r">Actions</th>
+                  <th>Effective date</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {visible.map((r) => (
-                  <tr key={r.id} className={r.active ? "" : "off"}>
+                  <tr key={r.id}>
                     <td>{rules.indexOf(r) + 1}</td>
                     <td className="strong">{r.param}</td>
                     <td>{label(r)}</td>
@@ -500,24 +407,16 @@ export default function RuleEngine() {
                       </span>
                     </td>
                     <td>{r.decision === "Override" ? `+${r.offset}%` : "-"}</td>
-                    <td>
+                    <td>{r.effectiveDate || "—"}</td>
+                    <td className="rl-action-cell">
                       <button
-                        className={`switch ${r.active ? "on" : ""}`}
-                        role="switch"
-                        aria-checked={r.active}
-                        aria-label={`Toggle ${r.param} rule`}
-                        onClick={() => toggle(r.id)}
-                      />
-                    </td>
-                    <td className="r">
-                      <button className="link" onClick={() => edit(r)}>
-                        Edit
-                      </button>
-                      <button
-                        className="link danger"
+                        className="rl-remove"
+                        type="button"
+                        aria-label={`Remove ${r.param} rule`}
+                        title="Remove rule"
                         onClick={() => remove(r.id)}
                       >
-                        Delete
+                        Remove
                       </button>
                     </td>
                   </tr>
@@ -532,20 +431,6 @@ export default function RuleEngine() {
               </tbody>
             </table>
           </div>
-          {/* <div className="rl-foot">
-            <button
-              className="btn ghost"
-              onClick={() => {
-                setRules(SEED);
-                say("Changes discarded");
-              }}
-            >
-              Discard changes
-            </button>
-            <button className="btn primary" onClick={saveAll}>
-              Save rules
-            </button>
-          </div> */}
         </section>
 
         {toast && (

@@ -16,6 +16,8 @@ import Card from './Card';
 import PageHeader from './PageHeader';
 import LeadDatePicker from './LeadDatePicker';
 import { getApplicationId, getCustomerName } from './GoldLoanApplication';
+import { getLookupOptions, getLookupTypes } from '../services/lookups';
+import { RETAIL_LOAN_LOOKUP_OPTIONS } from '../data/retailLoanLookups';
 
 export const RETAIL_LOAN_STORAGE_KEY = 'los.retailLoanApplications';
 
@@ -79,9 +81,6 @@ const INPUT_VALIDATION = {
   sanctioningAuthority: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
   productCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
   schemeCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
-  purposeCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
-  prioritySectorCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
-  termCode: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
   securityId: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
   city: [/^[A-Za-z\s]*$/, 'City must contain alphabetic characters and spaces only.'],
   state: [/^[A-Za-z\s]*$/, 'State must contain alphabetic characters and spaces only.'],
@@ -92,23 +91,54 @@ const INPUT_VALIDATION = {
   ifscCode: [/^[A-Za-z0-9]*$/, 'IFSC code must contain letters and numbers only.'],
   beneficiaryMobileNumber: [/^\d*$/, 'Mobile number must contain digits only.'],
 };
+const BASIC_DETAILS_LOOKUPS = {
+  purposeCode: { label: 'Purpose Code', aliases: ['purposecode', 'purpose', 'purposeofloan', 'purposeloan'], useCodeValue: true },
+  prioritySector: { label: 'Priority Sector', aliases: ['prioritysector', 'prioritysectorflag', 'prioritysectoryn', 'yesno', 'yesorno'] },
+  prioritySectorCode: { label: 'Priority Code', aliases: ['prioritysectorcode', 'prioritycode', 'sectorcode'], useCodeValue: true },
+  industryType: { label: 'Industry Type', aliases: ['industrytype', 'industry'] },
+  industrySubType: { label: 'Industry Sub Type', aliases: ['industrysubtype', 'subindustrytype', 'subsector', 'subsectorcode'] },
+  physicallyChallenged: { label: 'Physically Challenged', aliases: ['physicallychallenged', 'physicallychallengedyn', 'disabilitystatus', 'yesno', 'yesorno'] },
+  termCode: {
+    label: 'Term Code',
+    aliases: [
+      'termcode',
+      'loantermcode',
+      'term',
+      'terms',
+      'loanterm',
+      'loanterms',
+      'loantermtype',
+      'termtype',
+      'tenure',
+      'tenurecode',
+      'tenuretype',
+      'loantenure',
+      'loantenurecode',
+      'loantenuretype',
+      'repaymentterm',
+      'repaymenttermcode',
+      'loanrepaymentterm',
+      'termcategory',
+      'tenurecategory',
+    ],
+    useCodeValue: true,
+  },
+};
+const TEMPORARY_BASIC_DETAILS_OPTIONS = {
+  purposeCode: ['FAMILY', 'BUSINESS', 'EDUCATION', 'MEDICAL'],
+  prioritySector: ['Yes', 'No'],
+  prioritySectorCode: ['RETAIL'],
+  industryType: ['Agriculture', 'Manufacturing', 'Services', 'Retail', 'Other'],
+  industrySubType: ['Gold', 'Agriculture', 'Manufacturing', 'Trading', 'Other'],
+  physicallyChallenged: ['Yes', 'No'],
+  termCode: ['SHORT', 'MEDIUM'],
+};
+const normalizeLookupName = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const ACCOUNT_STATUS_OPTIONS = ['Draft', 'Pending', 'In review', 'Approved', 'Disbursed', 'Awaiting KYC', 'Returned', 'Rejected', 'Active', 'Closed'];
 const MODE_OF_OPERATION_OPTIONS = ['Single', 'Joint', 'Either or Survivor', 'Anyone or Survivor'];
 const PARTY_NAME_TYPE_OPTIONS = ['Applicant', 'Guarantor', 'Co-applicant', 'Nominee'];
 const PARTY_RELATION_OPTIONS = ['Spouse', 'Parent', 'Sibling', 'Child', 'Other'];
 const SALUTATION_OPTIONS = ['Mr', 'Mrs', 'Ms', 'Dr'];
-const SECURITY_TYPE_OPTIONS = [
-  'Immovable Property',
-  'Movable Property',
-  'Hypothecation',
-  'Mortgage',
-  'Pledge',
-  'Fixed Deposit',
-  'Gold ornaments',
-  'Vehicle',
-  'Other',
-];
-
 function isValidAmount(value) {
   const text = String(value ?? '').trim();
   return /^(?:\d+)(?:\.\d{1,2})?$/.test(text)
@@ -185,6 +215,12 @@ function validateDate(value, label, required = false) {
   const text = String(value ?? '').trim();
   if (!text) return required ? `${label} is required.` : '';
   return isValidDate(text) ? '' : `Enter a valid ${label.toLowerCase()}.`;
+}
+
+function addCurrentValueToOptions(options, currentValue) {
+  return currentValue && !options.includes(currentValue)
+    ? [currentValue, ...options]
+    : options;
 }
 
 function validateRelatedParty(party, index) {
@@ -340,6 +376,10 @@ export function createInitialRetailLoanForm(application) {
     inspectionReportName: application?.inspectionReportName || '',
     securityValue: application?.securityValue || '',
     insuranceCompany: application?.insuranceCompany || '',
+    policyType: application?.policyType || '',
+    premiumFrequency: application?.premiumFrequency || '',
+    policyStatus: application?.policyStatus || '',
+    autoRenew: application?.autoRenew || '',
     policyNumber: application?.policyNumber || '',
     insuranceIssueDate: application?.insuranceIssueDate || application?.effectiveDate || goldLoan.effectiveDate || '',
     premiumAmount: application?.premiumAmount || '',
@@ -508,6 +548,7 @@ function RetailField({
             id={inputId}
             name={name}
             label={label}
+            popupPlacement="side"
             value={value ?? ''}
             onChange={(nextValue) => handleInputChange(nextValue)}
             min={inputProps.min}
@@ -606,6 +647,9 @@ export default function RetailLoanApplicationForm({
   const [saveMessage, setSaveMessage] = useState('');
   const [saveError, setSaveError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [basicLookupOptions, setBasicLookupOptions] = useState({});
+  const [basicLookupNotice, setBasicLookupNotice] = useState('');
+  const [basicLookupsLoading, setBasicLookupsLoading] = useState(true);
   const submissionLock = useRef(false);
   const repaymentRows = useMemo(() => getRepaymentRows(form), [form]);
   const currentRelatedParty = form.relatedParties[currentPartyIndex];
@@ -613,16 +657,109 @@ export default function RetailLoanApplicationForm({
     currentRelatedParty && Object.keys(validateRelatedParty(currentRelatedParty, currentPartyIndex)).length === 0,
   );
 
-  const sectionDescriptions = [
-    'Enter the borrower identity, account information, and product details.',
-    'Add any co-applicant, guarantor, or other related parties associated with this loan.',
-    'Review the requested loan amount, interest rates, and repayment terms.',
-    'Review the calculated instalment schedule and amortisation forecast.',
-    'Provide industry classification, purpose codes, and priority sector details.',
-    'Provide the security asset details, valuation, and inspection report.',
-    'Enter the insurance policy coverage and validity details.',
-    'Provide the bank account and mode for loan disbursement.',
-  ];
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadBasicDetailsLookups() {
+      setBasicLookupsLoading(true);
+      setBasicLookupNotice('');
+      const getTemporaryOptions = (field) => TEMPORARY_BASIC_DETAILS_OPTIONS[field]
+        .map((value) => ({ value, label: value }));
+      try {
+        const lookupTypes = (await getLookupTypes(controller.signal))
+          .filter((lookup) => lookup.status === 'Active');
+        const entries = await Promise.all(Object.entries(BASIC_DETAILS_LOOKUPS).map(async ([field, config]) => {
+          const matchRank = (lookup) => Math.min(...config.aliases.map((alias, index) => (
+            [lookup.code, lookup.name].some((value) => normalizeLookupName(value) === alias)
+              ? index
+              : Number.POSITIVE_INFINITY
+          )));
+          const extendedMatchRank = (lookup) => {
+            const exactMatchRank = matchRank(lookup);
+            if (Number.isFinite(exactMatchRank)) return exactMatchRank;
+            if (field !== 'termCode') return Number.POSITIVE_INFINITY;
+            const lookupNames = [lookup.code, lookup.name].map((value) => String(value || ''));
+            return lookupNames.some((value) => (
+              /(^|[^a-z])(term|tenure)([^a-z]|$)/i.test(value)
+              && !/(unit|duration|frequency|months?|years?|days?)/i.test(value)
+            ))
+              ? config.aliases.length
+              : Number.POSITIVE_INFINITY;
+          };
+          const candidates = lookupTypes
+            .filter((lookup) => lookup.code && Number.isFinite(extendedMatchRank(lookup)))
+            .sort((first, second) => extendedMatchRank(first) - extendedMatchRank(second));
+
+          if (!candidates.length) {
+            return {
+              field,
+              options: getTemporaryOptions(field),
+              error: new Error(`No active lookup type found for ${config.label}.`),
+              logError: false,
+            };
+          }
+
+          try {
+            const options = await getLookupOptions(candidates[0].code, controller.signal);
+            const activeOptions = options.filter((option) => option.status === 'Active');
+            if (!activeOptions.length) {
+              return {
+                field,
+                options: getTemporaryOptions(field),
+                error: new Error(`The active ${config.label} lookup has no options.`),
+                logError: false,
+              };
+            }
+            return {
+              field,
+              options: activeOptions.map((option) => ({
+                value: config.useCodeValue && option.code ? option.code : option.name || option.code,
+                label: option.name || option.code,
+              })),
+            };
+          } catch (error) {
+            return { field, options: getTemporaryOptions(field), error, logError: true };
+          }
+        }));
+
+        if (!controller.signal.aborted) {
+          setBasicLookupOptions(Object.fromEntries(entries.map(({ field, options }) => [field, options])));
+          const failedEntries = entries.filter((entry) => entry.error);
+          if (failedEntries.length) {
+            failedEntries.forEach(({ field, error, logError }) => {
+              if (logError) {
+                console.warn(`Using temporary options for ${BASIC_DETAILS_LOOKUPS[field].label}.`, error);
+              }
+            });
+            setBasicLookupNotice(`Temporary frontend options are in use for ${failedEntries
+              .map(({ field }) => BASIC_DETAILS_LOOKUPS[field].label)
+              .join(', ')} because active lookup data is unavailable.`);
+          }
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn('Using temporary frontend options because Basic Details lookup data could not be loaded.', error);
+          setBasicLookupOptions(Object.fromEntries(
+            Object.keys(TEMPORARY_BASIC_DETAILS_OPTIONS)
+              .map((field) => [field, getTemporaryOptions(field)]),
+          ));
+          setBasicLookupNotice('Temporary frontend options are in use because Basic Details lookup data is unavailable.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setBasicLookupsLoading(false);
+      }
+    }
+
+    loadBasicDetailsLookups();
+    return () => controller.abort();
+  }, []);
+
+  const getBasicDetailsLookupOptions = (field) => {
+    const options = basicLookupOptions[field] || [];
+    const currentValue = String(form[field] ?? '');
+    if (!currentValue || options.some((option) => option.value === currentValue)) return options;
+    return [{ value: currentValue, label: currentValue }, ...options];
+  };
 
   const updateField = (name, value) => {
     const nextForm = { ...form, [name]: value };
@@ -771,8 +908,6 @@ export default function RetailLoanApplicationForm({
       putError('lastName', validateText(values.lastName, 'Last name', { required: true, pattern: NAME_PATTERN }));
       putError('productCode', validateCode(values.productCode, 'Product code', { required: true }));
       putError('productName', validateText(values.productName, 'Product description', { required: true }));
-      putError('schemeCode', validateCode(values.schemeCode, 'Scheme code', { required: true }));
-      putError('schemeDescription', validateText(values.schemeDescription, 'Scheme description', { required: true }));
       putError('branch', validateText(values.branch, 'Branch', { minLength: 2 }));
       if (!ACCOUNT_STATUS_OPTIONS.includes(values.accountStatus)) next.accountStatus = 'Select a valid account status.';
       if (!MODE_OF_OPERATION_OPTIONS.includes(values.modeOfOperation)) next.modeOfOperation = 'Select a valid mode of operation.';
@@ -839,15 +974,9 @@ export default function RetailLoanApplicationForm({
     }
 
     if (step === 4) {
-      putError('purposeCode', validateCode(values.purposeCode, 'Purpose code', { required: true }));
-      if (!['Yes', 'No'].includes(values.prioritySector)) next.prioritySector = 'Select Yes or No for priority sector.';
-      putError('prioritySectorCode', validateCode(values.prioritySectorCode, 'Priority sector code', { required: true }));
-      putError('industryType', validateText(values.industryType, 'Industry type', { required: true }));
-      putError('industrySubType', validateText(values.industrySubType, 'Industry sub type', { required: true }));
-      if (!['Yes', 'No'].includes(values.physicallyChallenged)) {
-        next.physicallyChallenged = 'Select Yes or No for physically challenged.';
-      }
-      putError('termCode', validateCode(values.termCode, 'Term code', { required: true }));
+      Object.entries(BASIC_DETAILS_LOOKUPS).forEach(([field, config]) => {
+        if (!String(values[field] ?? '').trim()) next[field] = `${config.label} is required.`;
+      });
     }
 
     if (step === 5) {
@@ -1042,7 +1171,7 @@ export default function RetailLoanApplicationForm({
       [],
       ['purposeCode', 'prioritySector', 'prioritySectorCode', 'industryType', 'industrySubType', 'physicallyChallenged', 'termCode'],
       ['securityId', 'securityType', 'securityEffectiveDate', 'assetType', 'securityAmount', 'marginPercent', 'assetAddress', 'assetAddressLine2', 'city', 'state', 'pincode', 'valuationAmount', 'valuerName', 'valuationDate', 'inspectionBy', 'inspectionDate', 'inspectionReportName'],
-      ['insuranceCompany', 'policyNumber', 'insuranceIssueDate', 'premiumAmount', 'sumAssured', 'insuranceExpiryDate'],
+      ['policyType', 'premiumFrequency', 'policyStatus', 'autoRenew', 'insuranceCompany', 'policyNumber', 'insuranceIssueDate', 'premiumAmount', 'sumAssured', 'insuranceExpiryDate'],
       [
         'disbursementMode',
         'disbursementAccountNumber',
@@ -1090,20 +1219,22 @@ export default function RetailLoanApplicationForm({
   return (
     <AppShell title={isEditMode ? ' Retail Loan Application' : 'Retail Loan Application'}>
       <div className="retail-form-page">
-        <button
-          className="loan-form-back"
-          type="button"
-          onClick={cancel}
-          aria-label={`Back to ${backLabel}`}
-          title={`Back to ${backLabel}`}
-        >
-          <ArrowLeft size={18} aria-hidden="true" />
-          <span>Back</span>
-        </button>
-        <PageHeader
-          title={isEditMode ? 'Edit Retail Loan Application' : 'Retail Loan Application'}
-          description={isEditMode ? `Application ID: ${getApplicationId(application)}` : 'Complete the retail loan origination steps below.'}
-        />
+        <div className="retail-page-heading">
+          <PageHeader
+            className="retail-page-title"
+            title={isEditMode ? 'Edit Retail Loan Application' : 'Retail Loan Application'}
+          />
+          <button
+            className="loan-form-back"
+            type="button"
+            onClick={cancel}
+            aria-label={`Back to ${backLabel}`}
+            title={`Back to ${backLabel}`}
+          >
+            <ArrowLeft size={14} aria-hidden="true" />
+            <span>Back</span>
+          </button>
+        </div>
 
         <Card className="loan-application-card">
           <div className="retail-form-container">
@@ -1131,15 +1262,6 @@ export default function RetailLoanApplicationForm({
             </nav>
 
             <form className="retail-form-panel" onSubmit={submit} noValidate>
-              {/* Step Header */}
-              <header className="retail-step-header">
-                <span className="retail-step-kicker">
-                  STEP {String(currentStep + 1).padStart(2, '0')} OF {String(RETAIL_STEPS.length).padStart(2, '0')}
-                </span>
-                <h2 className="retail-step-heading">{RETAIL_STEPS[currentStep]}</h2>
-                <p className="retail-step-subtitle">{sectionDescriptions[currentStep]}</p>
-              </header>
-
               {saveMessage && (
                 <div className="retail-alert success" role="status">
                   <Check size={16} aria-hidden="true" />
@@ -1154,55 +1276,36 @@ export default function RetailLoanApplicationForm({
 
               {/* Step 0: Borrower Details */}
               {currentStep === 0 && (
-                <div className="retail-sections-stack">
-                  {/* Section 1: Application Information */}
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Application Information</h3>
-                    </div>
-                    <div className="retail-grid two-column">
-                      {input('Loan Account Number', 'loanAccountNumber', { required: true, maxLength: 30, placeholder: 'e.g. RL-2026-001' })}
-                      {input('Effective Date', 'effectiveDate', { type: 'date', required: true })}
-                      {input('Customer ID', 'customerId', { required: true, maxLength: 14, placeholder: 'CUS-YYYY-NNNNN' })}
-                      {input('Branch', 'branch', { maxLength: 50, placeholder: 'Branch code or location' })}
-                      {input('Account Status', 'accountStatus', {
-                        options: ACCOUNT_STATUS_OPTIONS,
-                        required: true,
-                      })}
-                      {input('Last Transaction Date', 'lastTransactionDate', { type: 'date', min: form.effectiveDate, required: true, max: getTodayDate() })}
-                    </div>
-                  </section>
-
-                  {/* Section 2: Borrower Information */}
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Borrower Information</h3>
-                    </div>
-                    <div className="retail-grid borrower-grid">
-                      {input('Title', 'title', { options: ['Mr', 'Mrs', 'Ms', 'Dr', 'Other'], required: true })}
-                      {input('First Name', 'firstName', { required: true, maxLength: 50, placeholder: 'Enter first name' })}
-                      {input('Middle Name', 'middleName', { maxLength: 50, placeholder: 'Enter middle name' })}
-                      {input('Last Name', 'lastName', { required: true, maxLength: 50, placeholder: 'Enter last name' })}
-                    </div>
-                  </section>
-
-                  {/* Section 3: Loan Product Information */}
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Loan Product Information</h3>
-                    </div>
-                    <div className="retail-grid two-column">
-                      {input('Product Code', 'productCode', { required: true, maxLength: 30 })}
-                      {input('Product Description', 'productName', { required: true, maxLength: 50 })}
-                      {input('Scheme Code', 'schemeCode', { required: true, maxLength: 30 })}
-                      {input('Scheme Description', 'schemeDescription', { required: true, maxLength: 50 })}
-                      {input('Mode of Operation', 'modeOfOperation', {
-                        options: MODE_OF_OPERATION_OPTIONS,
-                        required: true,
-                      })}
-                    </div>
-                  </section>
-                </div>
+                <section className="retail-section-card retail-form-rows">
+                  <div className="retail-grid four-column">
+                    {input('Loan Account No', 'loanAccountNumber', { required: true, maxLength: 30, placeholder: 'e.g. RL-2026-001' })}
+                    {input('Customer ID', 'customerId', { required: true, maxLength: 14, placeholder: 'CUS-YYYY-NNNNN' })}
+                    {input('Branch', 'branch', { maxLength: 50, placeholder: 'Branch code or location' })}
+                    {input('Effective Date', 'effectiveDate', { type: 'date', required: true })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Title', 'title', { options: ['Mr', 'Mrs', 'Ms', 'Dr', 'Other'], required: true })}
+                    {input('First Name', 'firstName', { required: true, maxLength: 50, placeholder: 'Enter first name' })}
+                    {input('Middle Name', 'middleName', { maxLength: 50, placeholder: 'Enter middle name' })}
+                    {input('Last Name', 'lastName', { required: true, maxLength: 50, placeholder: 'Enter last name' })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Product Code', 'productCode', { required: true, maxLength: 30 })}
+                    {input('Product Description', 'productName', { required: true, maxLength: 50 })}
+                    {input('Account Status', 'accountStatus', {
+                      className: 'column-four',
+                      options: ACCOUNT_STATUS_OPTIONS,
+                      required: true,
+                    })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Mode of Operation', 'modeOfOperation', {
+                      options: MODE_OF_OPERATION_OPTIONS,
+                      required: true,
+                    })}
+                    {input('Last Transaction Date', 'lastTransactionDate', { type: 'date', min: form.effectiveDate, required: true, max: getTodayDate() })}
+                  </div>
+                </section>
               )}
 
               {/* Step 1: Related Party */}
@@ -1341,25 +1444,31 @@ export default function RetailLoanApplicationForm({
 
               {/* Step 2: Loan Details */}
               {currentStep === 2 && (
-                <section className="retail-section-card">
+                <section className="retail-section-card retail-compact-details">
                   <div className="retail-section-header">
                     <h3 className="retail-section-title">Loan Details & Terms</h3>
                   </div>
-                  <div className="retail-grid two-column">
-                  {input('Sanction Date', 'sanctionedDate', { type: 'date', min: form.effectiveDate, required: true })}
-                  {input('Sanction Authority', 'sanctioningAuthority', { required: true, maxLength: 50, placeholder: 'e.g. Branch Manager' })}
+                  <div className="retail-grid four-column">
+                    {input('Sanction Date', 'sanctionedDate', { type: 'date', min: form.effectiveDate, required: true })}
+                    {input('Sanction Authority', 'sanctioningAuthority', { required: true, maxLength: 50, placeholder: 'e.g. Branch Manager' })}
                     {input('Loan Amount (₹)', 'loanAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                  {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', max: '600', step: '1', required: true, placeholder: 'e.g. 36' })}
-                  {input('Interest Rate %', 'interestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 10.50' })}
-                  {input('Offset Rate %', 'offsetRate', { type: 'number', min: '0', max: '100', step: '0.01', placeholder: 'e.g. 0.00' })}
-                  {input('Total Interest Rate %', 'totalInterestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, readOnly: true })}
-                  {input('Moratorium (months)', 'moratorium', { type: 'number', min: '0', max: '600', step: '1', placeholder: '0' })}
-                  {input('Expiry Date', 'expiryDate', { type: 'date', min: dateAfter(form.sanctionedDate), required: true })}
-                  {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                  {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
-                  {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly', 'User Defined'], required: true })}
+                    {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', max: '600', step: '1', required: true, placeholder: 'e.g. 36' })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Interest Rate %', 'interestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 10.50' })}
+                    {input('Offset Rate %', 'offsetRate', { type: 'number', min: '0', max: '100', step: '0.01', placeholder: 'e.g. 0.00' })}
+                    {input('Total Interest Rate %', 'totalInterestRate', { className: 'column-four', type: 'number', min: '0', max: '100', step: '0.01', required: true, readOnly: true })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Moratorium (months)', 'moratorium', { type: 'number', min: '0', max: '600', step: '1', placeholder: '0' })}
+                    {input('Expiry Date', 'expiryDate', { type: 'date', min: dateAfter(form.sanctionedDate), required: true })}
+                    {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly', 'User Defined'], required: true })}
                     {input('Bullet Payment (₹)', 'bulletPayment', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
-                  {input('Instalment End Date', 'instalmentEndDate', { type: 'date', min: form.instalmentStartDate, max: form.expiryDate, required: true })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
+                    {input('Instalment End Date', 'instalmentEndDate', { className: 'column-four', type: 'date', min: form.instalmentStartDate, max: form.expiryDate, required: true })}
                   </div>
                 </section>
               )}
@@ -1421,102 +1530,129 @@ export default function RetailLoanApplicationForm({
 
               {/* Step 4: Basic Details */}
               {currentStep === 4 && (
-                <section className="retail-section-card">
+                <section className="retail-section-card retail-compact-details">
                   <div className="retail-section-header">
-                    <h3 className="retail-section-title">Classification & Priority Sector</h3>
+                    <h3 className="retail-section-title">Basic Details</h3>
                   </div>
-                  <div className="retail-grid two-column">
-                    {input('Purpose Code', 'purposeCode', { required: true, maxLength: 30, placeholder: 'e.g. PUR-01' })}
-                    {input('Priority Sector [Y/N]', 'prioritySector', { options: ['Yes', 'No'], required: true })}
-                    {input('Priority Sector Code', 'prioritySectorCode', { required: true, maxLength: 30, placeholder: 'e.g. PSC-02' })}
-                    {input('Industry Type', 'industryType', { required: true, maxLength: 50, placeholder: 'e.g. Services' })}
-                    {input('Industry Sub Type', 'industrySubType', { required: true, maxLength: 50, placeholder: 'e.g. Retail Trade' })}
-                    {input('Physically Challenged', 'physicallyChallenged', { options: ['Yes', 'No'], required: true })}
-                    {input('Term Code', 'termCode', { required: true, maxLength: 30, placeholder: 'e.g. TRM-01' })}
+                  {basicLookupNotice && <p className="retail-section-subtitle" role="status">{basicLookupNotice}</p>}
+                  <div className="retail-grid four-column">
+                    {input('Purpose Code', 'purposeCode', { options: getBasicDetailsLookupOptions('purposeCode'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.purposeCode?.length })}
+                    {input('Priority Sector', 'prioritySector', { options: getBasicDetailsLookupOptions('prioritySector'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.prioritySector?.length })}
+                    {input('Priority Code', 'prioritySectorCode', { className: 'column-four', options: getBasicDetailsLookupOptions('prioritySectorCode'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.prioritySectorCode?.length })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Industry Type', 'industryType', { options: getBasicDetailsLookupOptions('industryType'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.industryType?.length })}
+                    {input('Industry Sub Type', 'industrySubType', { options: getBasicDetailsLookupOptions('industrySubType'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.industrySubType?.length })}
+                    {input('Physically Challenged', 'physicallyChallenged', { options: getBasicDetailsLookupOptions('physicallyChallenged'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.physicallyChallenged?.length })}
+                    {input('Term Code', 'termCode', { options: getBasicDetailsLookupOptions('termCode'), required: true, readOnly: basicLookupsLoading || !basicLookupOptions.termCode?.length })}
                   </div>
                 </section>
               )}
 
               {/* Step 5: Security Details */}
               {currentStep === 5 && (
-                <div className="retail-sections-stack">
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Security & Collateral Information</h3>
+                <section className="retail-section-card retail-form-rows">
+                  <div className="retail-grid three-equal-spread">
+                    {input('Security ID', 'securityId', { required: true, maxLength: 30, placeholder: 'e.g. SEC-101' })}
+                    {input('Security Type', 'securityType', {
+                      options: addCurrentValueToOptions(RETAIL_LOAN_LOOKUP_OPTIONS.securityType, form.securityType),
+                      required: true,
+                    })}
+                    {input('Effective Date', 'securityEffectiveDate', { type: 'date', min: form.effectiveDate, required: true })}
+                  </div>
+                  <div className="retail-grid three-equal-spread">
+                    {input('Asset Type', 'assetType', {
+                      options: addCurrentValueToOptions(RETAIL_LOAN_LOOKUP_OPTIONS.assetType, form.assetType),
+                      required: true,
+                    })}
+                    {input('Security Amount (₹)', 'securityAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Margin %', 'marginPercent', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 20' })}
+                  </div>
+                  <div className="retail-grid full-width-grid">
+                    {input('Address', 'assetAddress', { required: true, maxLength: 125, placeholder: 'Address line 1' })}
+                  </div>
+                  <div className="retail-grid full-width-grid">
+                    {input('Address Line 2', 'assetAddressLine2', { required: true, maxLength: 125, placeholder: 'Address line 2' })}
+                  </div>
+                  <div className="retail-grid three-equal-spread">
+                    {input('City', 'city', {
+                      options: addCurrentValueToOptions(RETAIL_LOAN_LOOKUP_OPTIONS.city, form.city),
+                      required: true,
+                    })}
+                    {input('State', 'state', {
+                      options: addCurrentValueToOptions(RETAIL_LOAN_LOOKUP_OPTIONS.state, form.state),
+                      required: true,
+                    })}
+                    {input('Pincode', 'pincode', { required: true, inputMode: 'numeric', maxLength: 6, placeholder: '6-digit PIN' })}
+                  </div>
+                  <div className="retail-grid three-equal-spread">
+                    {input('Valuation Amount (₹)', 'valuationAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Valuer Name', 'valuerName', { required: true, maxLength: 50, placeholder: 'Certified Valuer Name' })}
+                    {input('Valuation Done On', 'valuationDate', { type: 'date', min: form.securityEffectiveDate, required: true })}
+                  </div>
+                  <div className="retail-grid three-equal-spread">
+                    {input('Inspection By', 'inspectionBy', { required: true, maxLength: 50, placeholder: 'Inspector Name or Agency' })}
+                    {input('Inspection Done On', 'inspectionDate', { type: 'date', min: form.securityEffectiveDate, required: true })}
+                    <div className="retail-field">
+                      <label className="retail-field-label">
+                        Inspection Report <span className="retail-required" aria-hidden="true"> *</span>
+                      </label>
+                      <label className="retail-file-picker">
+                        <Upload size={16} aria-hidden="true" />
+                        <span>{form.inspectionReportName || 'Click to select report document (.pdf, .jpg, .png)'}</span>
+                        <input
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          className="retail-hidden-file-input"
+                          onChange={(event) => updateField('inspectionReportName', event.target.files?.[0]?.name || '')}
+                        />
+                      </label>
+                      {errors.inspectionReportName && (
+                        <span className="retail-field-error-text" role="alert">{errors.inspectionReportName}</span>
+                      )}
                     </div>
-                    <div className="retail-grid two-column">
-                      {input('Security ID', 'securityId', { required: true, maxLength: 30, placeholder: 'e.g. SEC-101' })}
-                      {input('Security Type', 'securityType', { required: true, maxLength: 50, placeholder: 'e.g. Immovable Property' })}
-                      {input('Effective Date', 'securityEffectiveDate', { type: 'date', min: form.effectiveDate, required: true })}
-                      {input('Asset Type', 'assetType', { required: true, maxLength: 50, placeholder: 'e.g. Residential Apartment' })}
-                      {input('Security Amount (₹)', 'securityAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                      {input('Margin %', 'marginPercent', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 20' })}
-                    </div>
-                  </section>
-
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Asset Location & Valuation</h3>
-                    </div>
-                    <div className="retail-grid two-column">
-                      {input('Address', 'assetAddress', { required: true, maxLength: 125, placeholder: 'Address line 1' })}
-                      {input('Address Line 2', 'assetAddressLine2', { required: true, maxLength: 125, placeholder: 'Address line 2' })}
-                      {input('City', 'city', { required: true, maxLength: 50, placeholder: 'City' })}
-                      {input('State', 'state', { required: true, maxLength: 50, placeholder: 'State' })}
-                      {input('Pincode', 'pincode', { required: true, inputMode: 'numeric', maxLength: 6, placeholder: '6-digit PIN' })}
-                      {input('Valuation Amount (₹)', 'valuationAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                      {input('Valuer Name', 'valuerName', { required: true, maxLength: 50, placeholder: 'Certified Valuer Name' })}
-                      {input('Valuation Done On', 'valuationDate', { type: 'date', min: form.securityEffectiveDate, required: true })}
-                      {input('Inspection By', 'inspectionBy', { required: true, maxLength: 50, placeholder: 'Inspector Name or Agency' })}
-                      {input('Inspection Done On', 'inspectionDate', { type: 'date', min: form.securityEffectiveDate, required: true })}
-                      <div className="retail-field span-full">
-                        <label className="retail-field-label">
-                          Inspection Report <span className="retail-required" aria-hidden="true"> *</span>
-                        </label>
-                        <label className="retail-file-picker">
-                          <Upload size={16} aria-hidden="true" />
-                          <span>{form.inspectionReportName || 'Click to select report document (.pdf, .jpg, .png)'}</span>
-                          <input
-                            type="file"
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            className="retail-hidden-file-input"
-                            onChange={(event) => updateField('inspectionReportName', event.target.files?.[0]?.name || '')}
-                          />
-                        </label>
-                        {errors.inspectionReportName && (
-                          <span className="retail-field-error-text" role="alert">{errors.inspectionReportName}</span>
-                        )}
-                      </div>
-                    </div>
-                  </section>
-                </div>
+                  </div>
+                </section>
               )}
 
               {/* Step 6: Insurance Details */}
               {currentStep === 6 && (
-                <section className="retail-section-card">
+                <section className="retail-section-card retail-form-rows">
                   <div className="retail-section-header">
                     <h3 className="retail-section-title">Insurance Policy & Coverage</h3>
                   </div>
-                  <div className="retail-grid two-column">
+                  <div className="retail-grid four-column">
+                    {input('Policy Type', 'policyType', { options: RETAIL_LOAN_LOOKUP_OPTIONS.policyType })}
+                    {input('Premium Frequency', 'premiumFrequency', { options: RETAIL_LOAN_LOOKUP_OPTIONS.premiumFrequency })}
+                    {input('Policy Status', 'policyStatus', { options: RETAIL_LOAN_LOOKUP_OPTIONS.policyStatus })}
+                    {input('Auto Renew', 'autoRenew', { options: RETAIL_LOAN_LOOKUP_OPTIONS.autoRenew })}
+                  </div>
+                  <div className="retail-grid four-column">
                     {input('Security Value (₹)', 'securityValue', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true })}
                     {input('Premium Amount (₹)', 'premiumAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                    {input('Insurance Company', 'insuranceCompany', { required: true, maxLength: 50, placeholder: 'Insurer name' })}
-                    {input('Sum Assured (₹)', 'sumAssured', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
                     {input('Policy Number', 'policyNumber', { required: true, maxLength: 30, placeholder: 'Policy number' })}
-                    {input('Insurance Expiry Date', 'insuranceExpiryDate', { type: 'date', min: dateAfter(form.insuranceIssueDate), required: true })}
+                    {input('Sum Assured (₹)', 'sumAssured', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                  </div>
+                  <div className="retail-grid four-column">
+                    {input('Insurance Company', 'insuranceCompany', {
+                      className: 'span-two',
+                      required: true,
+                      maxLength: 50,
+                      placeholder: 'Insurer name',
+                    })}
                     {input('Insurance Issue Date', 'insuranceIssueDate', { type: 'date', required: true })}
+                    {input('Insurance Expiry Date', 'insuranceExpiryDate', { type: 'date', min: dateAfter(form.insuranceIssueDate), required: true })}
                   </div>
                 </section>
               )}
 
               {/* Step 7: Disbursement */}
               {currentStep === 7 && (
-                <section className="retail-section-card">
+                <section className="retail-section-card retail-form-rows">
                   <div className="retail-section-header">
                     <h3 className="retail-section-title">Disbursement Account & Mode</h3>
                   </div>
-                  <div className="retail-grid two-column">
+                  <div className="retail-grid four-column">
                     {input('Payment Mode', 'disbursementMode', {
                       options: ['NEFT', 'RTGS', 'IMPS', 'Cheque'],
                       required: true,
@@ -1524,10 +1660,10 @@ export default function RetailLoanApplicationForm({
                       onBlur: () => blurDisbursementField('disbursementMode'),
                     })}
                   </div>
-                  <div className="retail-section-header">
+                  <div className="retail-section-header beneficiary-details-heading">
                     <h3 className="retail-section-title">Beneficiary Details</h3>
                   </div>
-                  <div className="retail-grid two-column">
+                  <div className="retail-grid four-column">
                     {input('Account No', 'disbursementAccountNumber', {
                       placeholder: 'Bank account number',
                       inputMode: 'numeric',
@@ -1557,14 +1693,6 @@ export default function RetailLoanApplicationForm({
                       onChange: updateDisbursementField,
                       onBlur: () => blurDisbursementField('beneficiaryAccountName'),
                     })}
-                    {/* <button
-                      type="button"
-                      className="retail-btn-secondary"
-                      disabled
-                      title="Beneficiary account name lookup is not configured."
-                    >
-                      Beneficiary Account Name Lookup
-                    </button> */}
                     {input('Mobile No', 'beneficiaryMobileNumber', {
                       inputMode: 'numeric',
                       placeholder: '10-digit mobile number',
@@ -1634,32 +1762,56 @@ export default function RetailLoanApplicationForm({
       <style jsx>{`
         .retail-form-page {
           min-width: 0;
+          margin-top: -15px;
           color: #243039;
+        }
+
+        .retail-page-heading {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 16px;
+          margin-bottom: 16px;
+        }
+
+        :global(.retail-page-title) {
+          flex: 1;
+          min-width: 0;
+          margin: 0;
+        }
+
+        :global(.retail-page-title h1) {
+          margin: 0;
+          font-size: 23px;
+          letter-spacing: -0.5px;
+        }
+
+        :global(.retail-page-title p) {
+          display: none;
         }
 
         :global(.loan-form-back) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          gap: 8px;
-          min-height: 38px;
-          margin-bottom: 12px;
-          padding: 0 13px;
-          border: 1px solid #dfe8e8;
+          flex: 0 0 auto;
+          gap: 5px;
+          min-height: 32px;
+          padding: 0 10px;
+          border: 1px solid #368262;
           border-radius: 8px;
-          background: #fff;
-          color: #405d61;
+          background: #368262;
+          color: #fff;
           font: inherit;
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 650;
           cursor: pointer;
-          transition: border-color .15s ease, background .15s ease, color .15s ease;
+          transition: border-color .15s ease, background .15s ease;
         }
 
         :global(.loan-form-back:hover) {
-          border-color: #b8d4cf;
-          background: #f4faf9;
-          color: #177e7a;
+          border-color: #2d6e52;
+          background: #2d6e52;
         }
 
         :global(.loan-dashboard-back) {
@@ -1691,7 +1843,7 @@ export default function RetailLoanApplicationForm({
         .retail-form-container {
           display: flex;
           flex-direction: column;
-          gap: 24px;
+          gap: 16px;
           min-height: 0;
         }
 
@@ -1722,7 +1874,7 @@ export default function RetailLoanApplicationForm({
           background: transparent;
           color: #60747a;
           font-family: inherit;
-          font-size: 13px;
+          font-size: 11px;
           font-weight: 600;
           white-space: nowrap;
           cursor: pointer;
@@ -1754,7 +1906,7 @@ export default function RetailLoanApplicationForm({
           border-radius: 50%;
           background: #fff;
           color: #657b81;
-          font-size: 11px;
+          font-size: 10px;
           font-weight: 700;
           transition: all .15s ease;
         }
@@ -1775,41 +1927,11 @@ export default function RetailLoanApplicationForm({
           line-height: 1.2;
         }
 
-        /* 2. Form Panel & Step Header */
+        /* 2. Form Panel */
         .retail-form-panel {
           min-width: 0;
           display: flex;
           flex-direction: column;
-        }
-
-        .retail-step-header {
-          margin-bottom: 22px;
-          padding-bottom: 4px;
-        }
-
-        .retail-step-kicker {
-          display: inline-block;
-          color: #177e7a;
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: .12em;
-          text-transform: uppercase;
-          margin-bottom: 6px;
-        }
-
-        .retail-step-heading {
-          margin: 0 0 6px;
-          color: #1d3b48;
-          font-size: 24px;
-          font-weight: 700;
-          letter-spacing: -0.01em;
-        }
-
-        .retail-step-subtitle {
-          margin: 0;
-          color: #708087;
-          font-size: 13px;
-          line-height: 1.5;
         }
 
         /* Alerts */
@@ -1865,6 +1987,10 @@ export default function RetailLoanApplicationForm({
           border-bottom: 1px solid #f0f4f5;
         }
 
+        .retail-section-header.beneficiary-details-heading .retail-section-title {
+          text-align: center;
+        }
+
         .retail-section-header.with-action {
           display: flex;
           align-items: flex-start;
@@ -1875,7 +2001,7 @@ export default function RetailLoanApplicationForm({
         .retail-section-title {
           margin: 0;
           color: #1d3b48;
-          font-size: 16px;
+          font-size: 14px;
           font-weight: 700;
           letter-spacing: -0.01em;
         }
@@ -1894,10 +2020,24 @@ export default function RetailLoanApplicationForm({
 
         .retail-grid.two-column {
           grid-template-columns: repeat(2, minmax(0, 1fr));
+          max-width: 920px;
         }
 
         .retail-grid.three-column {
           grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .retail-grid.three-equal-spread {
+          grid-template-columns: repeat(3, minmax(0, calc(25% - 15px)));
+          justify-content: space-between;
+        }
+
+        .retail-grid.four-column {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .retail-grid.full-width-grid {
+          grid-template-columns: minmax(0, 1fr);
         }
 
         .retail-grid.borrower-grid {
@@ -1905,8 +2045,24 @@ export default function RetailLoanApplicationForm({
           gap: 14px;
         }
 
+        .retail-compact-details > .retail-grid + .retail-grid {
+          margin-top: 16px;
+        }
+
+        .retail-form-rows > .retail-grid + .retail-grid {
+          margin-top: 16px;
+        }
+
         .span-full {
           grid-column: 1 / -1;
+        }
+
+        .retail-grid.four-column > .span-two {
+          grid-column: span 2;
+        }
+
+        .retail-grid.four-column > .column-four {
+          grid-column: 4;
         }
 
         /* 5. Field Controls */
@@ -1922,7 +2078,7 @@ export default function RetailLoanApplicationForm({
           align-items: center;
           gap: 4px;
           color: #304b59;
-          font-size: 12px;
+          font-size: 11px;
           font-weight: 600;
           line-height: 1.3;
           text-align: left;
@@ -1935,18 +2091,40 @@ export default function RetailLoanApplicationForm({
 
         :global(.retail-input-control),
         :global(.retail-select-control) {
+          box-sizing: border-box;
           width: 100%;
           min-width: 0;
-          height: 42px;
-          padding: 0 12px;
+          height: 40px;
+          padding: 0 10px;
           border: 1px solid #d7e2e5;
           border-radius: 8px;
           background: #f8fbfc;
           color: #1b3541;
           font-family: inherit;
-          font-size: 13px;
+          font-size: 12px;
           outline: none;
           transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+        }
+
+        .retail-compact-details :global(.retail-input-control),
+        .retail-compact-details :global(.retail-select-control) {
+          height: 40px;
+          padding: 0 10px;
+          border-color: #c6dacf;
+          background: #fff;
+        }
+
+        :global(.retail-field .lead-calendar-picker .lead-date-picker-trigger) {
+          box-sizing: border-box;
+          height: 40px;
+          min-height: 40px;
+          font-family: inherit;
+          font-size: 12px;
+        }
+
+        .retail-compact-details :global(.retail-field .lead-calendar-picker .lead-date-picker-trigger) {
+          border-color: #c6dacf;
+          background: #fff;
         }
 
         :global(.retail-input-control:focus),
@@ -1954,6 +2132,17 @@ export default function RetailLoanApplicationForm({
           border-color: #177e7a;
           background: #fff;
           box-shadow: 0 0 0 3px rgba(23, 126, 122, 0.12);
+        }
+
+        .retail-compact-details :global(.retail-input-control:focus),
+        .retail-compact-details :global(.retail-select-control:focus) {
+          border-color: #368262;
+          box-shadow: none;
+        }
+
+        .retail-compact-details :global(.retail-field .lead-calendar-picker .lead-date-picker-trigger:focus) {
+          border-color: #368262;
+          box-shadow: none;
         }
 
         :global(.retail-input-control::placeholder) {
@@ -2008,7 +2197,7 @@ export default function RetailLoanApplicationForm({
           display: flex;
           align-items: center;
           gap: 10px;
-          min-height: 42px;
+          min-height: 40px;
           padding: 0 14px;
           border: 1px dashed #c0d3d8;
           border-radius: 8px;
@@ -2087,15 +2276,16 @@ export default function RetailLoanApplicationForm({
         }
 
         .table-select {
+          box-sizing: border-box;
           width: 100%;
-          height: 34px;
+          height: 40px;
           padding: 0 24px 0 8px;
           border: 1px solid #d7e2e5;
           border-radius: 6px;
           background: #f8fbfc;
           color: #1b3541;
           font-family: inherit;
-          font-size: 12px;
+          font-size: 13px;
           appearance: none;
           outline: none;
         }
@@ -2113,16 +2303,17 @@ export default function RetailLoanApplicationForm({
         }
 
         .table-input {
+          box-sizing: border-box;
           width: 100%;
           min-width: 90px;
-          height: 34px;
+          height: 40px;
           padding: 0 8px;
           border: 1px solid #d7e2e5;
           border-radius: 6px;
           background: #f8fbfc;
           color: #1b3541;
           font-family: inherit;
-          font-size: 12px;
+          font-size: 13px;
           outline: none;
         }
 
@@ -2189,7 +2380,7 @@ export default function RetailLoanApplicationForm({
           padding: 0 18px;
           border-radius: 8px;
           font-family: inherit;
-          font-size: 13px;
+          font-size: 12px;
           font-weight: 700;
           cursor: pointer;
           transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease;
@@ -2214,17 +2405,17 @@ export default function RetailLoanApplicationForm({
         }
 
         .retail-btn-primary {
-          border: 1px solid #1f66d6;
-          background: #1f66d6;
+          border: 1px solid #368262;
+          background: #368262;
           color: #ffffff;
-          box-shadow: 0 4px 14px rgba(31, 102, 214, 0.22);
+          box-shadow: 0 4px 14px rgba(54, 130, 98, 0.22);
         }
 
         .retail-btn-primary:hover {
-          background: #1858bd;
-          border-color: #1858bd;
+          background: #2d6e52;
+          border-color: #2d6e52;
           transform: translateY(-1px);
-          box-shadow: 0 6px 18px rgba(31, 102, 214, 0.28);
+          box-shadow: 0 6px 18px rgba(54, 130, 98, 0.28);
         }
 
         .retail-btn-primary:disabled {
@@ -2256,13 +2447,22 @@ export default function RetailLoanApplicationForm({
             padding: 18px;
           }
 
-          .retail-grid.two-column,
           .retail-grid.three-column {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
 
+          .retail-grid.three-equal-spread {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            justify-content: initial;
+          }
+
+          .retail-grid.four-column,
           .retail-grid.borrower-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+
+          .retail-grid.four-column > .column-four {
+            grid-column: auto;
           }
 
           .retail-stepper {
@@ -2305,8 +2505,19 @@ export default function RetailLoanApplicationForm({
             grid-template-columns: 1fr;
           }
 
-          .retail-step-heading {
-            font-size: 20px;
+          .retail-grid.four-column {
+            grid-template-columns: 1fr;
+          }
+
+          .retail-grid.four-column > .span-two {
+            grid-column: 1 / -1;
+          }
+
+          .retail-grid.two-column,
+          .retail-grid.three-column,
+          .retail-grid.three-equal-spread {
+            grid-template-columns: 1fr;
+            max-width: none;
           }
 
           .retail-form-actions {
@@ -2324,6 +2535,14 @@ export default function RetailLoanApplicationForm({
           .retail-actions-group .retail-btn-primary {
             flex: 1;
             min-width: 0;
+          }
+
+          .retail-page-heading {
+            align-items: flex-start;
+          }
+
+          :global(.retail-page-title h1) {
+            font-size: 20px;
           }
         }
       `}</style>

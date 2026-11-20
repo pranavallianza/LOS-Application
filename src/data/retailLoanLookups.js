@@ -1,0 +1,28 @@
+export const RETAIL_LOAN_LOOKUP_OPTIONS = {
+  securityType: [
+    'Immovable Property',
+    'Movable Property',
+    'Hypothecation',
+    'Mortgage',
+    'Pledge',
+    'Fixed Deposit',
+    'Gold ornaments',
+    'Vehicle',
+    'Other',
+  ],
+  assetType: [
+    'Residential Apartment',
+    'Commercial Property',
+    'Land',
+    'Vehicle',
+    'Gold Ornaments',
+    'Fixed Deposit',
+    'Other',
+  ],
+  city: ['Mumbai', 'Pune', 'Delhi', 'Bengaluru', 'Chennai', 'Hyderabad'],
+  state: ['Maharashtra', 'Delhi', 'Karnataka', 'Tamil Nadu', 'Telangana', 'Gujarat'],
+  policyType: ['Life', 'Health', 'Property', 'Vehicle', 'Other'],
+  premiumFrequency: ['Monthly', 'Quarterly', 'Half-Yearly', 'Annual'],
+  policyStatus: ['Active', 'Pending', 'Expired', 'Cancelled'],
+  autoRenew: ['Yes', 'No'],
+};
