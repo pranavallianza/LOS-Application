@@ -114,6 +114,7 @@ export async function getLookupOptions(lookupTypeCode, signal) {
       name,
       description: option.description ?? "",
       status: toDisplayStatus(option.status, option.isActive),
+      displayOrder: option.display_order ?? option.displayOrder ?? index + 1,
     };
   });
 }
@@ -121,6 +122,13 @@ export async function getLookupOptions(lookupTypeCode, signal) {
 export async function createLookupType(lookupType) {
   return requestLookupApi("/lookups", {
     method: "POST",
+    body: JSON.stringify(lookupType),
+  });
+}
+
+export async function updateLookupType(lookupId, lookupType) {
+  return requestLookupApi(`/lookups/${encodeURIComponent(lookupId)}`, {
+    method: "PUT",
     body: JSON.stringify(lookupType),
   });
 }
@@ -133,6 +141,13 @@ export async function createLookupSubType(lookupTypeCode, subType) {
       body: JSON.stringify(subType),
     },
   );
+}
+
+export async function updateLookupSubType(subLookupId, subType) {
+  return requestLookupApi(`/sub-lookups/${encodeURIComponent(subLookupId)}`, {
+    method: "PUT",
+    body: JSON.stringify(subType),
+  });
 }
 
 export async function setLookupTypeActive(lookupType, active) {
