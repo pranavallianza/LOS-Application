@@ -6,7 +6,7 @@ import { CirclePlus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import { persistRetailLoanApplication } from '../../components/RetailLoanApplicationForm';
 import { assessLoanEligibility } from '../../services/loanEligibility';
-import { getAllLeads } from '../../services/lead_management';
+import { getLeads } from '../../services/localLeads';
 
 const POLICY = {
   maxFoir: 50,
@@ -296,9 +296,7 @@ export default function LoanEligibilityPage() {
   const [formError, setFormError] = useState('');
   const [leadPickerOpen, setLeadPickerOpen] = useState(false);
   const [leads, setLeads] = useState([]);
-  const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadSearch, setLeadSearch] = useState('');
-  const [leadPickerError, setLeadPickerError] = useState('');
 
   const securedProduct = isSecuredProduct(form.productName);
   const hasLtvLimit = Number.isFinite(assessment?.ltvLimit);
@@ -316,19 +314,10 @@ export default function LoanEligibilityPage() {
     ? assessment.decision
     : 'Assessment pending';
 
-  async function openLeadPicker() {
+  function openLeadPicker() {
     setLeadPickerOpen(true);
     setLeadSearch('');
-    setLeadPickerError('');
-    setLeadsLoading(true);
-    try {
-      setLeads(await getAllLeads());
-    } catch (error) {
-      setLeadPickerError(error instanceof Error ? error.message : 'Unable to load leads.');
-      setLeads([]);
-    } finally {
-      setLeadsLoading(false);
-    }
+    setLeads(getLeads());
   }
 
   function selectLead(lead) {
@@ -1120,7 +1109,6 @@ export default function LoanEligibilityPage() {
                   autoFocus
                 />
               </label>
-              {leadPickerError && <p className="lead-picker-error" role="alert">{leadPickerError}</p>}
               <div className="lead-picker-table-wrap">
                 <table className="lead-picker-table">
                   <thead>
@@ -1133,11 +1121,7 @@ export default function LoanEligibilityPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {leadsLoading ? (
-                      <tr><td className="lead-picker-empty" colSpan="5">Loading leads from the backend...</td></tr>
-                    ) : leadPickerError ? (
-                      <tr><td className="lead-picker-empty" colSpan="5">Leads could not be loaded.</td></tr>
-                    ) : filteredLeads.length ? (
+                    {filteredLeads.length ? (
                       filteredLeads.map((lead, index) => {
                         const leadId = getLeadId(lead);
                         return (
