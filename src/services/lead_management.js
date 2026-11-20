@@ -1,9 +1,14 @@
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL
-).replace(/\/+$/, '');
-const API_V1_URL = /\/api\/v\d+$/i.test(API_BASE_URL)
-  ? API_BASE_URL
-  : `${API_BASE_URL}/api/v1`;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/+$/, '');
+
+function getApiV1Url() {
+  if (!API_BASE_URL) {
+    throw new Error('NEXT_PUBLIC_API_URL is not configured.');
+  }
+
+  return /\/api\/v\d+$/i.test(API_BASE_URL)
+    ? API_BASE_URL
+    : `${API_BASE_URL}/api/v1`;
+}
 
 function getRequestHeaders() {
   const storedAuthData = window.localStorage.getItem('authData');
@@ -57,7 +62,7 @@ async function requestLeads(path, options, defaultMessage) {
 
 export async function createLead(lead) {
   return requestLeads(
-    `${API_V1_URL}/leads`,
+    `${getApiV1Url()}/leads`,
     { method: 'POST', body: JSON.stringify(lead) },
     'Unable to create lead',
   );
@@ -65,7 +70,7 @@ export async function createLead(lead) {
 
 export async function getAllLeads() {
   const result = await requestLeads(
-    `${API_V1_URL}/leads`,
+    `${getApiV1Url()}/leads`,
     { method: 'GET', cache: 'no-store' },
     'Unable to load leads',
   );
@@ -93,7 +98,7 @@ export async function getLeadById(leadId) {
   if (!leadId) throw new Error('A lead ID is required to load lead details.');
 
   const result = await requestLeads(
-    `${API_V1_URL}/leads/${encodeURIComponent(leadId)}`,
+    `${getApiV1Url()}/leads/${encodeURIComponent(leadId)}`,
     { method: 'GET', cache: 'no-store' },
     'Unable to load lead details',
   );
@@ -110,7 +115,7 @@ export async function updateLead(leadId, updates) {
   if (!leadId) throw new Error('A lead ID is required to update the lead.');
 
   return requestLeads(
-    `${API_V1_URL}/leads/${encodeURIComponent(leadId)}`,
+    `${getApiV1Url()}/leads/${encodeURIComponent(leadId)}`,
     { method: 'PUT', body: JSON.stringify(updates) },
     'Unable to update lead',
   );
@@ -122,7 +127,7 @@ export async function assignLead(leadId, employeeId, assignedBy) {
   if (!assignedBy) throw new Error('Your employee ID is unavailable. Please sign in again.');
 
   return requestLeads(
-    `${API_V1_URL}/leads/${encodeURIComponent(leadId)}/assign`,
+    `${getApiV1Url()}/leads/${encodeURIComponent(leadId)}/assign`,
     {
       method: 'PUT',
       body: JSON.stringify({ employeeId, assignedBy }),
@@ -132,7 +137,7 @@ export async function assignLead(leadId, employeeId, assignedBy) {
 }
 
 export async function exportAllLeads() {
-  const response = await fetch(`${API_V1_URL}/leads/export`, {
+  const response = await fetch(`${getApiV1Url()}/leads/export`, {
     method: 'GET',
     headers: {
       ...getRequestHeaders(),
@@ -164,7 +169,7 @@ export async function importLeadsCsv(file, onProgress) {
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
-    request.open('POST', `${API_V1_URL}/leads/import`);
+    request.open('POST', `${getApiV1Url()}/leads/import`);
     request.setRequestHeader('Authorization', getRequestHeaders().Authorization);
 
     request.upload.addEventListener('progress', (event) => {

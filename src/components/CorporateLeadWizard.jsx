@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react';
 import LeadDatePicker from './LeadDatePicker';
-import { createLead, updateLead } from '../services/lead_management';
 
 const steps = ['Entity Info', 'Loan Details', 'Income Profile', 'Referral Details'];
 const organizationTypes = ['Private Limited Company', 'Public Limited Company', 'Limited Liability Partnership', 'Partnership Firm', 'Sole Proprietorship', 'Trust', 'Society', 'Other'];
@@ -284,13 +283,10 @@ export default function CorporateLeadWizard({ open, initialData, onClose, onSave
 
     setIsSubmitting(true);
     try {
-      const response = isEditing
-        ? await updateLead(initialData.id || initialData.leadId, payload)
-        : await createLead(payload);
-      onSaved({ ...payload, id: initialData?.id || initialData?.leadId || payload.id }, response);
+      onSaved({ ...payload, id: initialData?.id || initialData?.leadId || payload.id });
       onClose();
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Unable to save the corporate lead.');
+      setFormError(error instanceof Error ? error.message : 'Unable to save the corporate lead locally.');
     } finally {
       setIsSubmitting(false);
     }
@@ -304,7 +300,7 @@ export default function CorporateLeadWizard({ open, initialData, onClose, onSave
     const monthlyObligations = existingEmi + monthlyEmi;
     if (metric === 'CIBIL') {
       const liability = facilities.reduce((sum, facility) => sum + numberValue(facility.outstanding), 0);
-      setMetricMessage(`Declared outstanding liability: ₹${currency(liability)} across ${facilities.length} facility/facilities. A bureau score requires a configured CIBIL integration; no bureau inquiry was made.`);
+      setMetricMessage(`Declared outstanding liability: ₹${currency(liability)} across ${facilities.length} facility/facilities.`);
       return;
     }
     if (metric === 'DTI' && monthlyGross <= 0) {

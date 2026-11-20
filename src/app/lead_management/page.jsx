@@ -1,31 +1,39 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Pencil, Plus, Search, Upload, UserRound, X } from 'lucide-react';
+import { CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Download, Eye, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from 'lucide-react';
 import Calendar from 'react-calendar';
 import AppShell from '../../components/AppShell';
-import { PermissionGate } from '../../components/AccessControl';
 import LeadDatePicker from '../../components/LeadDatePicker';
 import PageHeader from '../../components/PageHeader';
 import NewLead from '../../components/NewLead';
 import CorporateLeadWizard from '../../components/CorporateLeadWizard';
 import LeadDetails from '../../components/LeadDetails';
-import { saveLeads } from '../../services/leadService';
-import { assignLead, exportAllLeads, getAllLeads, getLeadById, importLeadsCsv, updateLead } from '../../services/lead_management';
-import { getUsers } from '../../services/user_management';
+import { getLeads, saveLeads } from '../../services/leadService';
 
 const leadTableColumns = [
     ['srNo', 'Sr. No.'],
   ['id', 'Lead ID'],
-  ['firstName', 'First Name'],
-  ['lastName', 'Last Name'],
+  ['customerName', 'Customer Name'],
   ['mobileNumber', 'Mobile Number'],
   ['assignedToName', 'Assigned To'],
   ['status', 'Status'],
   ['date', 'Lead Date'],
 ];
 
+const normalizeLeadTitle = (title) => {
+  const value = String(title || '').trim();
+  const normalizedTitle = value.toLowerCase().replace(/\.$/, '');
+  return { mr: 'Mr.', ms: 'Ms.', mrs: 'Mrs.' }[normalizedTitle] || value;
+};
+
 const leadFieldValue = (lead, field) => {
   const aliases = {
+    customerName: [
+      normalizeLeadTitle(lead.namePrefix || lead.title),
+      lead.firstName,
+      lead.middleName,
+      lead.lastName,
+    ].filter(Boolean).join(' ') || lead.customerName || lead.name,
     mobileNumber: lead.mobileNumber || lead.mobile,
     assignedBy: lead.assignedBy || lead.createdBy,
     assignedToName: lead.assignedToName || lead.assignedCheckerName || lead.assignedViewerName,
@@ -53,28 +61,6 @@ const statusKeys = {
 };
 
 const LEADS_PER_PAGE = 10;
-
-const getUserRows = (result) => [
-  result?.data?.users,
-  result?.data?.items,
-  result?.data?.records,
-  result?.data?.content,
-  result?.data,
-  result?.users,
-  result?.items,
-  result?.records,
-  result?.content,
-].find(Array.isArray) || [];
-
-const getEmployeeId = (user) => user?.employeeId ?? user?.empNo ?? user?.employee?.employeeId ?? user?.employee?.empNo ?? '';
-const getEmployeeName = (user) => user?.name || user?.fullName || [user?.firstName, user?.middleName, user?.lastName].filter(Boolean).join(' ') || user?.username || user?.userName || user?.email || '';
-const isMaker = (user) => {
-  const roles = [user?.userRole, user?.user_role, user?.role, user?.roleName, user?.roles, user?.designation]
-    .flatMap((role) => Array.isArray(role) ? role : [role])
-    .filter(Boolean)
-    .map((role) => typeof role === 'string' ? role : role.name || role.roleName || '');
-  return roles.some((role) => String(role).toLowerCase().includes('maker'));
-};
 
 const toIsoDate = (date) => {
   const value = String(date || '');
@@ -109,6 +95,52 @@ const leadsToCsv = (records) => {
   ].join('\r\n');
 };
 
+const parseCsv = (text) => {
+  const rows = [];
+  let row = [];
+  let value = '';
+  let quoted = false;
+  const input = text.replace(/^\uFEFF/, '');
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+    if (quoted) {
+      if (character === '"' && input[index + 1] === '"') {
+        value += '"';
+        index += 1;
+      } else if (character === '"') {
+        quoted = false;
+      } else {
+        value += character;
+      }
+    } else if (character === '"') {
+      quoted = true;
+    } else if (character === ',') {
+      row.push(value);
+      value = '';
+    } else if (character === '\n' || character === '\r') {
+      if (character === '\r' && input[index + 1] === '\n') index += 1;
+      row.push(value);
+      if (row.some((cell) => cell.trim())) rows.push(row);
+      row = [];
+      value = '';
+    } else {
+      value += character;
+    }
+  }
+
+  if (quoted) throw new Error('The CSV contains an unclosed quoted field.');
+  row.push(value);
+  if (row.some((cell) => cell.trim())) rows.push(row);
+  if (rows.length < 2) throw new Error('The CSV must include a header row and at least one lead.');
+
+  const headers = rows[0].map((header) => header.trim());
+  if (headers.some((header) => !header)) throw new Error('Every CSV column must have a header.');
+  return rows.slice(1).map((cells) => Object.fromEntries(
+    headers.map((header, index) => [header, cells[index] ?? '']),
+  ));
+};
+
 const downloadBlob = (blob, filename) => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -121,7 +153,9 @@ const downloadBlob = (blob, filename) => {
 };
 
 const normalizeLeadRecord = (lead) => {
-  const nameParts = String(lead.entityName || lead.organizationName || lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const rawCustomerNameParts = String(lead.customerName || lead.name || '').trim().split(/\s+/).filter(Boolean);
+  const inferredTitle = /^(mr\.?|mrs\.?|ms\.?|miss|dr\.?)$/i.test(rawCustomerNameParts[0] || '') ? rawCustomerNameParts[0] : '';
+  const nameParts = inferredTitle ? rawCustomerNameParts.slice(1) : rawCustomerNameParts;
   const apiDate = lead.date || lead.leadDate || lead.createdAt || '';
   const dateMatch = String(apiDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
 
@@ -133,7 +167,9 @@ const normalizeLeadRecord = (lead) => {
         ? lead.customerName || lead.name || ''
         : ''),
     registrationNo: lead.registrationNo || lead.registrationNumber || lead.cin || lead.llpin || '',
+    namePrefix: normalizeLeadTitle(lead.namePrefix || lead.title || inferredTitle),
     firstName: lead.firstName || nameParts[0] || '',
+    middleName: lead.middleName || (nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : ''),
     lastName: lead.lastName || (nameParts.length > 1 ? nameParts[nameParts.length - 1] : ''),
     mobileNumber: lead.mobileNumber || lead.mobile || lead.phoneNumber || '',
     email: lead.email || lead.emailAddress || '',
@@ -264,11 +300,17 @@ const leadManagementStyles = `
 @media(max-width:540px){.lm-page{padding-top:0}.lm-page-header.page-header{align-items:flex-start;flex-direction:column;gap:12px}.lm-heading-actions{width:100%}.lm-heading-actions button{flex:1}.lm-toolbar{grid-template-columns:1fr;padding:12px}.lm-filter-search{grid-column:auto}.lm-reset{width:100%}.lm-results-meta{align-items:flex-start;flex-direction:column}.lm-pagination{align-items:flex-start;flex-direction:column}}
 `;
 
+const leadNoticeStyles = `
+.lm-toast{position:fixed;top:50%;left:50%;right:auto;transform:translate(-50%,-50%);z-index:1400;display:flex;align-items:flex-start;gap:14px;width:max-content;max-width:min(420px,calc(100vw - 32px));padding:13px 15px;border:1px solid;border-radius:7px;box-shadow:0 12px 36px rgba(20,50,48,.18);font-size:12px;font-weight:650;line-height:1.5}
+.lm-toast-success{border-color:#b9daca;background:#f1fbf4;color:#286746}
+.lm-toast-error{border-color:#edc9c9;background:#fff5f5;color:#963838}
+.lm-toast button{display:grid;place-items:center;flex:0 0 22px;width:22px;height:22px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;cursor:pointer}
+.lm-toast button:hover{background:rgba(30,60,55,.08)}
+`;
+
 export function LeadManagementPage({ corporate = false }) {
   const [leads, setLeads] = useState([]);
   const [isLoadingLeads, setIsLoadingLeads] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  const [reloadKey, setReloadKey] = useState(0);
   const [showNewLead, setShowNewLead] = useState(false);
   const [editingCorporateLead, setEditingCorporateLead] = useState(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
@@ -285,14 +327,10 @@ export function LeadManagementPage({ corporate = false }) {
   const [exportError, setExportError] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
-  const [isLoadingLeadDetails, setIsLoadingLeadDetails] = useState(false);
-  const [leadDetailsError, setLeadDetailsError] = useState('');
   const [editingLead, setEditingLead] = useState(null);
   const [assignmentLead, setAssignmentLead] = useState(null);
-  const [makerUsers, setMakerUsers] = useState([]);
-  const [makerLoading, setMakerLoading] = useState(false);
-  const [makerError, setMakerError] = useState('');
-  const [selectedMakerId, setSelectedMakerId] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [assigneeName, setAssigneeName] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -302,7 +340,15 @@ export function LeadManagementPage({ corporate = false }) {
   const [openDatePicker, setOpenDatePicker] = useState(null);
   const fromDatePickerRef = useRef(null);
   const toDatePickerRef = useRef(null);
+  const noticeTimerRef = useRef(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [notice, setNotice] = useState(null);
+
+  const showNotice = (type, message) => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ type, message });
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), 5000);
+  };
 
   useEffect(() => {
     if (!openDatePicker) return undefined;
@@ -320,88 +366,69 @@ export function LeadManagementPage({ corporate = false }) {
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
   }, [openDatePicker]);
 
+  useEffect(() => () => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+  }, []);
+
   useEffect(() => {
-    let isActive = true;
     setIsLoadingLeads(true);
-    setLoadError('');
-
-    getAllLeads()
-      .then((records) => {
-        if (isActive) setLeads(records.map(normalizeLeadRecord));
-      })
-      .catch((error) => {
-        if (isActive) {
-          setLoadError(error instanceof Error ? error.message : 'Unable to load leads.');
-        }
-      })
-      .finally(() => {
-        if (isActive) setIsLoadingLeads(false);
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [reloadKey]);
+    setLeads(getLeads().map(normalizeLeadRecord));
+    setIsLoadingLeads(false);
+  }, []);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter, fromDate, toDate]);
 
-  const handleCreateLead = (form, response) => {
-    setLeads((current) => {
-      const nextId = Math.max(...current.map((lead) => Number(String(lead.id).replace(/\D/g, ''))), 0) + 1;
-      const today = new Date();
-      const date = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-      const leadId = response?.leadId || response?.data?.leadId || response?.id || `LD${String(nextId).padStart(6, '0')}`;
-
-      return [{
-        ...form,
-        id: leadId,
-        name: form.customerName,
-        mobile: form.mobileNumber,
-        date,
-        status: response?.leadStatus || response?.data?.leadStatus || 'NEW',
-        statusKey: statusKeys[response?.leadStatus || response?.data?.leadStatus || 'NEW'],
-        branch: '',
-        product: form.loanProductType,
-        amount: Number(form.loanAmount).toLocaleString('en-IN'),
-        remarks: '',
-      }, ...current];
+  const handleCreateLead = (form) => {
+    const nextId = Math.max(...leads.map((lead) => Number(String(lead.id).replace(/\D/g, ''))), 0) + 1;
+    const today = new Date();
+    const date = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
+    const leadId = `LD${String(nextId).padStart(6, '0')}`;
+    const newLead = normalizeLeadRecord({
+      ...form,
+      id: leadId,
+      leadId,
+      name: form.customerName,
+      mobile: form.mobileNumber,
+      date,
+      status: 'New',
+      branch: form.branch || '',
+      product: form.loanProductType,
+      amount: Number(form.loanAmount).toLocaleString('en-IN'),
+      remarks: '',
     });
+    setLeads(saveLeads([newLead, ...leads]));
+    showNotice('success', 'Lead saved on this device.');
   };
 
-  const handleCorporateSaved = (form, response) => {
-    const responseLead = response?.data?.lead || response?.data || response;
-    const leadId = responseLead?.leadId || responseLead?.id || responseLead?._id || form.id;
-    if (!leadId) {
-      setReloadKey((key) => key + 1);
-      setEditingCorporateLead(null);
-      return;
-    }
+  const handleCorporateSaved = (form) => {
+    const nextId = Math.max(...leads.map((lead) => Number(String(lead.id).replace(/\D/g, ''))), 0) + 1;
+    const leadId = form.id || `CL${String(nextId).padStart(6, '0')}`;
     const savedLead = normalizeLeadRecord({
       ...form,
-      ...(responseLead && typeof responseLead === 'object' ? responseLead : {}),
       id: leadId,
       leadId,
       leadType: 'CORPORATE',
       customerName: form.entityName,
       name: form.entityName,
     });
-    setLeads((current) => [savedLead, ...current.filter((lead) => lead.id !== savedLead.id)]);
+    const nextLeads = [savedLead, ...leads.filter((lead) => lead.id !== savedLead.id)];
+    setLeads(saveLeads(nextLeads));
     setEditingCorporateLead(null);
   };
 
-  const handleUpdateLead = async (form, updates) => {
-    if (!editingLead?.id) throw new Error('The lead ID is missing.');
+  const handleUpdateLead = async (form) => {
+    if (!editingLead?.id) {
+      throw new Error('The lead ID is missing.');
+    }
 
-    const response = await updateLead(editingLead.id, updates);
     const nextLeads = leads.map((lead) => {
       if (lead.id !== editingLead.id) return lead;
 
       return normalizeLeadRecord({
         ...lead,
         ...form,
-        ...(response && typeof response === 'object' ? response : {}),
         id: lead.id,
         leadId: lead.id,
         name: form.customerName,
@@ -412,62 +439,35 @@ export function LeadManagementPage({ corporate = false }) {
       });
     });
     setLeads(saveLeads(nextLeads));
+    showNotice('success', 'Lead changes saved on this device.');
     setEditingLead(null);
   };
 
-  const openAssignmentDialog = async (lead) => {
+  const openAssignmentDialog = (lead) => {
     setAssignmentLead(lead);
-    setMakerUsers([]);
-    setSelectedMakerId('');
-    setMakerError('');
-    setMakerLoading(true);
-    try {
-      const users = getUserRows(await getUsers());
-      const makers = users.filter((user) => getEmployeeId(user) && isMaker(user));
-      setMakerUsers(makers);
-      if (!makers.length) setMakerError('No maker employees are available to assign.');
-    } catch (error) {
-      setMakerError(error instanceof Error ? error.message : 'Unable to load maker employees.');
-    } finally {
-      setMakerLoading(false);
-    }
+    setAssigneeId(lead.assignedToId || '');
+    setAssigneeName(lead.assignedToName || '');
   };
 
   const handleAssignLead = async (event) => {
     event.preventDefault();
     if (!assignmentLead || isAssigning) return;
 
-    setMakerError('');
     setIsAssigning(true);
     try {
-      let authData;
-      try {
-        authData = JSON.parse(window.localStorage.getItem('authData') || '{}');
-      } catch {
-        throw new Error('Your session is invalid. Please sign in again.');
-      }
-      const currentUser = authData.user || authData.profile || authData.employee || authData;
-      const assignedBy = currentUser.employeeId || currentUser.empNo || currentUser.employee?.employeeId || currentUser.employee?.empNo;
-      if (!assignedBy) throw new Error('Your employee ID is unavailable. Please sign in again.');
-
-      const selectedMaker = makerUsers.find((user) => String(getEmployeeId(user)) === selectedMakerId);
-      const response = await assignLead(assignmentLead.id, selectedMakerId, assignedBy);
-      const assignedRecord = response?.data?.lead || response?.data || response?.lead || response;
-      setLeads((current) => current.map((lead) => {
+      const nextLeads = leads.map((lead) => {
         if (lead.id !== assignmentLead.id) return lead;
         return normalizeLeadRecord({
           ...lead,
-          ...(assignedRecord && typeof assignedRecord === 'object' ? assignedRecord : {}),
-          leadId: lead.id,
-          assignedBy,
-          assignedToId: selectedMakerId,
-          assignedToName: getEmployeeName(selectedMaker) || selectedMakerId,
-          leadStatus: assignedRecord?.leadStatus || assignedRecord?.status || 'IN_PROGRESS',
+          assignedToId: assigneeId.trim(),
+          assignedToName: assigneeName.trim(),
         });
-      }));
+      });
+      setLeads(saveLeads(nextLeads));
+      showNotice('success', 'Lead assignment saved on this device.');
       setAssignmentLead(null);
     } catch (error) {
-      setMakerError(error instanceof Error ? error.message : 'Unable to assign this lead.');
+      showNotice('error', error instanceof Error ? error.message : 'Unable to assign this lead.');
     } finally {
       setIsAssigning(false);
     }
@@ -480,11 +480,15 @@ export function LeadManagementPage({ corporate = false }) {
     setExportError('');
     if (mode === 'date') {
       if (!exportFromDate || !exportToDate) {
-        setExportError('Select both a start date and an end date.');
+        const message = 'Select both a start date and an end date.';
+        setExportError(message);
+        showNotice('error', message);
         return;
       }
       if (exportFromDate > exportToDate) {
-        setExportError('The start date must be on or before the end date.');
+        const message = 'The start date must be on or before the end date.';
+        setExportError(message);
+        showNotice('error', message);
         return;
       }
     }
@@ -492,19 +496,12 @@ export function LeadManagementPage({ corporate = false }) {
     setIsExporting(true);
     try {
       if (mode === 'all') {
-        if (corporate) {
-          if (isLoadingLeads) throw new Error('Wait for the corporate leads to finish loading, then try again.');
-          if (loadError) throw new Error('Corporate leads could not be loaded. Retry loading leads before exporting.');
-          if (!activeLeads.length) throw new Error('There are no corporate leads to export.');
-          const csv = `\uFEFF${leadsToCsv(activeLeads)}`;
-          downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'corporate-leads.csv');
-        } else {
-          const csvBlob = await exportAllLeads();
-          downloadBlob(csvBlob, 'leads.csv');
-        }
+        if (isLoadingLeads) throw new Error('Wait for leads to finish loading, then try again.');
+        if (!activeLeads.length) throw new Error(`There are no ${corporate ? 'corporate ' : ''}leads to export.`);
+        const csv = `\uFEFF${leadsToCsv(activeLeads)}`;
+        downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), corporate ? 'corporate-leads.csv' : 'leads.csv');
       } else {
         if (isLoadingLeads) throw new Error('Wait for the leads to finish loading, then try again.');
-        if (loadError) throw new Error('Leads could not be loaded. Retry loading leads before exporting a date range.');
         const matchingLeads = activeLeads.filter((lead) => {
           const leadDate = toIsoDate(lead.date || lead.leadDate || lead.createdAt);
           return leadDate && leadDate >= exportFromDate && leadDate <= exportToDate;
@@ -513,9 +510,12 @@ export function LeadManagementPage({ corporate = false }) {
         const csv = `\uFEFF${leadsToCsv(matchingLeads)}`;
         downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `leads-${exportFromDate}-to-${exportToDate}.csv`);
       }
+      showNotice('success', 'Leads exported successfully.');
       setShowExportDialog(false);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : 'Unable to export leads.');
+      const message = error instanceof Error ? error.message : 'Unable to export leads.';
+      setExportError(message);
+      showNotice('error', message);
     } finally {
       setIsExporting(false);
     }
@@ -538,7 +538,9 @@ export function LeadManagementPage({ corporate = false }) {
     if (file && !file.name.toLowerCase().endsWith('.csv')) {
       setBulkFile(null);
       event.target.value = '';
-      setImportError('Choose a CSV (.csv) file.');
+      const message = 'Choose a CSV (.csv) file.';
+      setImportError(message);
+      showNotice('error', message);
       return;
     }
     setBulkFile(file);
@@ -553,60 +555,52 @@ export function LeadManagementPage({ corporate = false }) {
     setImportProgress(0);
     setIsImporting(true);
     try {
-      const result = await importLeadsCsv(bulkFile, setImportProgress);
-      const resultData = result?.data && typeof result.data === 'object' ? result.data : result;
-      const importedCount = resultData.importedCount ?? resultData.successCount ?? resultData.totalImported;
-      const rejectedCount = resultData.failedCount ?? resultData.errorCount;
-      const rowErrors = resultData.errors || resultData.rowErrors || resultData.failedRows || [];
-      const rowErrorList = Array.isArray(rowErrors) ? rowErrors : [];
-      const countText = importedCount !== undefined ? ` ${importedCount} lead${Number(importedCount) === 1 ? '' : 's'}` : '';
-      const hasRowErrors = Number(rejectedCount) > 0 || rowErrorList.length > 0;
-      setImportRowErrors(rowErrorList.slice(0, 10).map((error) => {
-        if (typeof error === 'string') return error;
-        const row = error.rowNumber ?? error.row ?? error.lineNumber;
-        const message = error.message ?? error.error ?? 'Row could not be imported.';
-        return row ? `Row ${row}: ${message}` : String(message);
-      }));
-      setImportSuccess(`${resultData.message || (hasRowErrors ? 'Import completed with row errors.' : `Leads imported successfully.${countText ? ` Imported${countText}.` : ''}`)}${rejectedCount ? ` ${rejectedCount} row${Number(rejectedCount) === 1 ? '' : 's'} could not be imported.` : ''}`);
-      setReloadKey((key) => key + 1);
+      setImportProgress(25);
+      const importedRecords = parseCsv(await bulkFile.text()).map((record, index) => {
+        const parsed = Object.fromEntries(Object.entries(record).map(([key, value]) => {
+          const text = value.trim();
+          if (text.startsWith('{') || text.startsWith('[')) {
+            try {
+              return [key, JSON.parse(text)];
+            } catch {
+              return [key, value];
+            }
+          }
+          return [key, value];
+        }));
+        const nextId = Math.max(...leads.map((lead) => Number(String(lead.id).replace(/\D/g, ''))), 0) + index + 1;
+        const id = parsed.id || parsed.leadId || `LD${String(nextId).padStart(6, '0')}`;
+        return normalizeLeadRecord({ ...parsed, id, leadId: id, status: parsed.status || 'New' });
+      });
+      const mergedLeads = [
+        ...importedRecords.filter((record) => !leads.some((lead) => lead.id === record.id)),
+        ...leads,
+      ];
+      setLeads(saveLeads(mergedLeads));
+      setImportProgress(100);
+      setImportSuccess(`Imported ${importedRecords.length} lead${importedRecords.length === 1 ? '' : 's'} to this device.`);
+      showNotice('success', 'Leads imported to this device.');
       window.setTimeout(() => {
         setShowBulkImport(false);
         setBulkFile(null);
       }, 1800);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Unable to import leads.');
+      const message = error instanceof Error ? error.message : 'Unable to import leads.';
+      setImportError(message);
+      showNotice('error', message);
     } finally {
       setIsImporting(false);
     }
   };
 
-  const loadLeadDetails = async (lead) => {
+  const loadLeadDetails = (lead) => {
     setSelectedLead(lead);
-    setIsLoadingLeadDetails(true);
-    setLeadDetailsError('');
-
-    try {
-      const details = normalizeLeadRecord(await getLeadById(lead.id));
-      setSelectedLead(details);
-      return details;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to load lead details.';
-      setLeadDetailsError(message);
-      throw error;
-    } finally {
-      setIsLoadingLeadDetails(false);
-    }
+    return lead;
   };
 
-  const openLeadEditor = async (lead, detailsAlreadyLoaded = false) => {
-    setLeadDetailsError('');
-    try {
-      const details = detailsAlreadyLoaded ? lead : await loadLeadDetails(lead);
-      setSelectedLead(null);
-      setEditingLead(details);
-    } catch {
-      setSelectedLead(lead);
-    }
+  const openLeadEditor = (lead) => {
+    setSelectedLead(null);
+    setEditingLead(lead);
   };
 
   const handleSearch = () => {
@@ -622,6 +616,9 @@ export function LeadManagementPage({ corporate = false }) {
     setOpenDatePicker(null);
   };
 
+  const todayDate = dateFromIso(dateToIso(new Date()));
+  const selectedToDate = dateFromIso(toDate);
+  const fromDateMax = selectedToDate && selectedToDate < todayDate ? selectedToDate : todayDate;
   const activeLeads = corporate ? leads.filter((lead) => isCorporateLead(lead)) : leads;
   const filteredLeads = activeLeads.filter((lead) => {
     const leadStatus = lead.status === 'Pending' ? 'New' : lead.status || 'New';
@@ -631,7 +628,7 @@ export function LeadManagementPage({ corporate = false }) {
     const toMatches = !toDate || Boolean(leadDate && leadDate <= toDate);
     const fieldValues = (corporate
       ? ['id', 'entityName', 'registrationNo', 'assignedBy', 'assignedToName']
-      : ['id', 'firstName', 'lastName', 'mobileNumber', 'assignedBy', 'assignedToName']).map((field) => leadFieldValue(lead, field));
+      : ['id', 'customerName', 'mobileNumber', 'assignedBy', 'assignedToName']).map((field) => leadFieldValue(lead, field));
     const searchMatches = !searchQuery || fieldValues.some((value) => String(value ?? '').toLowerCase().includes(searchQuery));
     return statusMatches && fromMatches && toMatches && searchMatches;
   });
@@ -646,7 +643,20 @@ export function LeadManagementPage({ corporate = false }) {
   return (
     <>
       <AppShell title="Lead Management">
-        <style>{leadManagementStyles}</style>
+        <style>{leadManagementStyles}{leadNoticeStyles}</style>
+        {!corporate && (showNewLead || Boolean(editingLead)) ? (
+          <NewLead
+            key={editingLead?.id || 'new-lead'}
+            open
+            initialData={editingLead}
+            onClose={() => {
+              setShowNewLead(false);
+              setEditingLead(null);
+            }}
+            onCreate={handleCreateLead}
+            onUpdate={handleUpdateLead}
+          />
+        ) : (
         <main className="lm-page">
           <PageHeader
             className="lm-page-header"
@@ -662,7 +672,7 @@ export function LeadManagementPage({ corporate = false }) {
                   setExportError('');
                   setShowExportDialog(true);
                 }}><Download size={16} /> Export Lead</button>
-                <button type="button" className="lm-add-button" onClick={() => corporate ? setEditingCorporateLead({}) : setShowNewLead(true)}><Plus size={16} /> Add New Lead</button>
+                <button type="button" className="lm-add-button" onClick={() => corporate ? setEditingCorporateLead({}) : setShowNewLead(true)}><Plus size={16} /> Add Lead</button>
                 <button type="button" className="lm-export-button" onClick={openBulkImport}><Upload size={16} /> Upload Bulk Lead</button>
               </div>
             }
@@ -700,6 +710,7 @@ export function LeadManagementPage({ corporate = false }) {
                         setFromDate(dateToIso(date));
                         setOpenDatePicker(null);
                       }}
+                      maxDate={fromDateMax}
                       defaultActiveStartDate={dateFromIso(fromDate) || new Date()}
                       locale="en-IN"
                     />
@@ -726,6 +737,7 @@ export function LeadManagementPage({ corporate = false }) {
                       className="loan-birth-calendar"
                       value={dateFromIso(toDate)}
                       minDate={dateFromIso(fromDate) || undefined}
+                      maxDate={todayDate}
                       onChange={(date) => {
                         setToDate(dateToIso(date));
                         setOpenDatePicker(null);
@@ -740,16 +752,13 @@ export function LeadManagementPage({ corporate = false }) {
             {(searchInput || statusFilter !== 'All' || fromDate || toDate) && <button type="button" className="lm-reset" onClick={clearFilters}><X size={14} /> Clear filters</button>}
           </section>
 
-          {loadError ? <div className="lm-load-error" role="alert"><span>{loadError}</span><button type="button" onClick={() => setReloadKey((key) => key + 1)}>Retry</button></div> : null}
-
           <section className="lm-results" aria-label="Lead records">
-            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, first and last name, mobile number, and assignee.'}</span></div>
+            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, customer name, mobile number, and assignee.'}</span></div>
             <div className="lm-table-wrap">
               <table className="lm-table">
                 <thead><tr>{tableColumns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead>
                 <tbody>
                   {isLoadingLeads ? <tr><td className="lm-empty" colSpan={tableColumns.length + 1}>Loading leads...</td></tr>
-                  : loadError ? <tr><td className="lm-empty" colSpan={tableColumns.length + 1}>Unable to load leads. Retry the request above.</td></tr>
                   : paginatedLeads.length ? paginatedLeads.map((lead, rowIndex) => (
                     <tr key={lead.id}>
                       {tableColumns.map(([field]) => (
@@ -762,7 +771,7 @@ export function LeadManagementPage({ corporate = false }) {
                         </td>
                       ))}
                       <td><div className="lm-actions">
-                        <button type="button" className="lm-action" onClick={() => loadLeadDetails(lead).catch(() => {})} aria-label={`View lead ${lead.id}`} title="View lead"><Eye size={14} /></button>
+                        <button type="button" className="lm-action" onClick={() => loadLeadDetails(lead)} aria-label={`View lead ${lead.id}`} title="View lead"><Eye size={14} /></button>
                         <button type="button" className="lm-action" onClick={() => corporate ? setEditingCorporateLead(lead) : openLeadEditor(lead)} aria-label={`Edit lead ${lead.id}`} title="Edit lead"><Pencil size={14} /></button>
                       <button type="button" className="lm-action" onClick={() => openAssignmentDialog(lead)} aria-label={`Assign lead ${lead.id}`} title="Assign lead">Assigned</button>
                       </div></td>
@@ -781,19 +790,19 @@ export function LeadManagementPage({ corporate = false }) {
             </footer>
           </section>
         </main>
+        )}
       </AppShell>
 
-      <NewLead
-        key={editingLead?.id || 'new-lead'}
-        open={!corporate && (showNewLead || Boolean(editingLead))}
-        initialData={editingLead}
-        onClose={() => {
-          setShowNewLead(false);
-          setEditingLead(null);
-        }}
-        onCreate={handleCreateLead}
-        onUpdate={handleUpdateLead}
-      />
+      {notice ? (
+        <div className={`lm-toast lm-toast-${notice.type}`} role={notice.type === 'error' ? 'alert' : 'status'} aria-live={notice.type === 'error' ? 'assertive' : 'polite'}>
+          <span>{notice.message}</span>
+          <button type="button" aria-label="Dismiss notification" onClick={() => {
+            if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+            setNotice(null);
+          }}><X size={15} /></button>
+        </div>
+      ) : null}
+
       {corporate ? (
         <CorporateLeadWizard
           open={Boolean(editingCorporateLead)}
@@ -805,14 +814,11 @@ export function LeadManagementPage({ corporate = false }) {
       <LeadDetails
         lead={selectedLead}
         open={Boolean(selectedLead)}
-        loading={isLoadingLeadDetails}
-        error={leadDetailsError}
-        onRetry={() => selectedLead && loadLeadDetails(selectedLead).catch(() => {})}
         onClose={() => setSelectedLead(null)}
         onEdit={(lead) => {
           setSelectedLead(null);
           if (corporate) setEditingCorporateLead(lead);
-          else openLeadEditor(lead, !isLoadingLeadDetails && !leadDetailsError);
+          else openLeadEditor(lead);
         }}
       />
       {showExportDialog ? (
@@ -830,7 +836,7 @@ export function LeadManagementPage({ corporate = false }) {
               }}>
                 <FileSpreadsheet size={18} />
                 <strong>Export All</strong>
-                <span>Download all leads from the leads export API.</span>
+                <span>Download all leads saved on this device.</span>
               </button>
               <button type="button" className={`lm-export-option${exportMode === 'date' ? ' selected' : ''}`} disabled={isExporting} onClick={() => {
                 setExportMode('date');
@@ -915,20 +921,16 @@ export function LeadManagementPage({ corporate = false }) {
         }}>
           <form className="lm-assignment-dialog" onSubmit={handleAssignLead} role="dialog" aria-modal="true" aria-labelledby="lm-assignment-title">
             <h2 id="lm-assignment-title">Assign Lead</h2>
-            <p>Choose a maker employee for lead {assignmentLead.id}.</p>
-            <label htmlFor="lead-maker-select">Assign To
-              <select id="lead-maker-select" value={selectedMakerId} onChange={(event) => setSelectedMakerId(event.target.value)} required disabled={makerLoading || isAssigning || !makerUsers.length}>
-                <option value="">{makerLoading ? 'Loading makers...' : 'Select maker'}</option>
-                {makerUsers.map((user) => {
-                  const employeeId = String(getEmployeeId(user));
-                  return <option key={employeeId} value={employeeId}>{getEmployeeName(user) || employeeId} ({employeeId})</option>;
-                })}
-              </select>
+            <p>Enter an assignee for lead {assignmentLead.id}.</p>
+            <label htmlFor="lead-assignee-name">Assignee name
+              <input id="lead-assignee-name" value={assigneeName} onChange={(event) => setAssigneeName(event.target.value)} required disabled={isAssigning} />
             </label>
-            {makerError ? <p className="lm-assignment-error" role="alert">{makerError}</p> : null}
+            <label htmlFor="lead-assignee-id">Employee ID
+              <input id="lead-assignee-id" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} disabled={isAssigning} />
+            </label>
             <div className="lm-assignment-actions">
               <button type="button" onClick={() => setAssignmentLead(null)} disabled={isAssigning}>Cancel</button>
-              <button type="submit" disabled={makerLoading || isAssigning || !makerUsers.length || !selectedMakerId}>{isAssigning ? 'Assigning...' : 'Assign'}</button>
+              <button type="submit" disabled={isAssigning || !assigneeName.trim()}>{isAssigning ? 'Saving...' : 'Assign'}</button>
             </div>
           </form>
         </div>

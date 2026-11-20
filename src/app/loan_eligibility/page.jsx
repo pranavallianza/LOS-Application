@@ -1,351 +1,1340 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, Check, CirclePlus, ClipboardCheck, LoaderCircle, RotateCcw, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { CirclePlus, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
-import PageHeader from '../../components/PageHeader';
+import { persistRetailLoanApplication } from '../../components/RetailLoanApplicationForm';
 import { assessLoanEligibility } from '../../services/loanEligibility';
+import { getAllLeads } from '../../services/lead_management';
 
-const makeRow = (id, type, source, amount = '') => ({ id, type, source, amount });
-const initialForm = () => ({
-  customerNumber: '', initials: '', name: '', loanType: 'Personal loan', requestedAmount: '', collateralValue: '',
-  annualInterestRate: '12', tenureMonths: '60', monthlyDebtService: '0', cibilScore: '',
-  rows: [makeRow(1, 'Income', 'Salary'), makeRow(2, 'Expense', 'Others', '0')]
+const POLICY = {
+  maxFoir: 50,
+  reviewFoir: 40,
+  cibilFloor: 650,
+  maxHomeLtv: {
+    upTo30L: 90,
+    upTo75L: 80,
+    above75L: 75
+  }
+};
+
+const LOAN_PRODUCTS = [
+  'Personal loan',
+  'Home loan',
+  'Vehicle loan',
+  'Business loan',
+  'Gold loan',
+  'Other secured loan'
+];
+
+const MAX_FINANCIAL_ROWS = 10;
+
+export function isSecuredProduct(productName) {
+  return /home|vehicle|gold|secured/i.test(productName);
+}
+
+const makeRow = (id, type = 'Income') => ({
+  id,
+  type,
+  source: '',
+  amount: ''
 });
 
-function money(value) {
-  return Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+const initialForm = () => ({
+  leadId: '',
+  applicantName: '',
+  productName: '',
+  requestedAmount: '',
+  annualInterestRate: '',
+  securityValue: '',
+  tenureMonths: '',
+  cibilScore: '',
+  existingMonthlyDebt: '0',
+  rows: [makeRow(1, 'Income')]
+});
+
+const numberValue = value => {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const leadValue = (lead, ...fields) => {
+  for (const field of fields) {
+    const value = lead?.[field];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return '';
+};
+
+function getLeadName(lead) {
+  const personNameParts = [
+    leadValue(lead, 'firstName', 'first_name'),
+    leadValue(lead, 'middleName', 'middle_name'),
+    leadValue(lead, 'lastName', 'last_name')
+  ].filter(Boolean);
+  const prefix = leadValue(lead, 'namePrefix', 'name_prefix', 'title');
+  return personNameParts.length
+    ? [prefix, ...personNameParts].filter(Boolean).join(' ')
+    : String(leadValue(lead, 'customerName', 'customer_name', 'name', 'applicantName', 'applicant_name') || '');
 }
 
-function calculateEmi(principal, annualRate, tenureMonths) {
-  if (!(principal > 0) || !(tenureMonths > 0)) return 0;
+function getLeadId(lead) {
+  return String(leadValue(lead, 'leadId', 'lead_id', 'id', '_id'));
+}
+
+function getLeadProduct(lead) {
+  const value = String(leadValue(lead, 'loanProductType', 'loan_product_type', 'product', 'productName', 'product_name') || '').trim();
+  const exactMatch = LOAN_PRODUCTS.find(product => product.toLowerCase() === value.toLowerCase());
+  if (exactMatch) return exactMatch;
+  if (/personal/i.test(value)) return 'Personal loan';
+  if (/home/i.test(value)) return 'Home loan';
+  if (/vehicle|car|auto/i.test(value)) return 'Vehicle loan';
+  if (/business/i.test(value)) return 'Business loan';
+  if (/gold/i.test(value)) return 'Gold loan';
+  if (/secured/i.test(value)) return 'Other secured loan';
+  return '';
+}
+
+const money = value => (
+  Number.isFinite(value)
+    ? value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '—'
+);
+
+const percent = value => (
+  Number.isFinite(value) ? `${value.toFixed(2)}%` : '—'
+);
+
+export function calculateEmi(principal, annualRate, tenureMonths) {
+  if (
+    !Number.isFinite(principal) ||
+    !Number.isFinite(annualRate) ||
+    !Number.isFinite(tenureMonths) ||
+    principal <= 0 ||
+    annualRate < 0 ||
+    tenureMonths <= 0
+  ) {
+    return 0;
+  }
+
   const monthlyRate = annualRate / 1200;
   if (monthlyRate === 0) return principal / tenureMonths;
+
   const factor = (1 + monthlyRate) ** tenureMonths;
-  return principal * monthlyRate * factor / (factor - 1);
+  return (principal * monthlyRate * factor) / (factor - 1);
 }
 
-function calculatePrincipal(emi, annualRate, tenureMonths) {
-  if (!(emi > 0) || !(tenureMonths > 0)) return 0;
+export function calculatePrincipal(emi, annualRate, tenureMonths) {
+  if (
+    !Number.isFinite(emi) ||
+    !Number.isFinite(annualRate) ||
+    !Number.isFinite(tenureMonths) ||
+    emi <= 0 ||
+    annualRate < 0 ||
+    tenureMonths <= 0
+  ) {
+    return 0;
+  }
+
   const monthlyRate = annualRate / 1200;
   if (monthlyRate === 0) return emi * tenureMonths;
-  return emi * (1 - (1 + monthlyRate) ** -tenureMonths) / monthlyRate;
+  return (emi * (1 - (1 + monthlyRate) ** -tenureMonths)) / monthlyRate;
 }
 
-function validate(form) {
+function homeLtvLimit(amount) {
+  if (amount <= 3000000) return POLICY.maxHomeLtv.upTo30L;
+  if (amount <= 7500000) return POLICY.maxHomeLtv.upTo75L;
+  return POLICY.maxHomeLtv.above75L;
+}
+
+export function calculateAssessment(form) {
+  const requestedAmount = numberValue(form.requestedAmount);
+  const annualInterestRate = numberValue(form.annualInterestRate);
+  const tenureMonths = numberValue(form.tenureMonths);
+  const securityValue = numberValue(form.securityValue);
+  const cibilScore = numberValue(form.cibilScore);
+  const existingMonthlyDebt = numberValue(form.existingMonthlyDebt) || 0;
+  const totalIncome = form.rows.reduce(
+    (total, row) => total + (row.type === 'Income' ? numberValue(row.amount) || 0 : 0),
+    0
+  );
+  const totalExpenses = form.rows.reduce(
+    (total, row) => total + (row.type === 'Expense' ? numberValue(row.amount) || 0 : 0),
+    0
+  );
+  const netIncome = Math.max(0, totalIncome - totalExpenses);
+  const requestedEmi = requestedAmount && annualInterestRate !== null && tenureMonths
+    ? calculateEmi(requestedAmount, annualInterestRate, tenureMonths)
+    : 0;
+  const totalMonthlyObligations = existingMonthlyDebt + requestedEmi;
+  const foir = netIncome > 0
+    ? (totalMonthlyObligations / netIncome) * 100
+    : null;
+  const dti = totalIncome > 0
+    ? (totalMonthlyObligations / totalIncome) * 100
+    : null;
+  const ltv = securityValue > 0 && requestedAmount
+    ? (requestedAmount / securityValue) * 100
+    : null;
+
+  const isHomeLoan = /home/i.test(form.productName);
+  const maxAffordableEmi = Math.max(
+    0,
+    Math.min(
+      netIncome - existingMonthlyDebt,
+      (netIncome * POLICY.maxFoir) / 100 - existingMonthlyDebt
+    )
+  );
+  const affordableAmount = annualInterestRate !== null && tenureMonths
+    ? calculatePrincipal(maxAffordableEmi, annualInterestRate, tenureMonths)
+    : 0;
+  const ltvLimit = isHomeLoan && requestedAmount
+    ? homeLtvLimit(requestedAmount)
+    : null;
+  const securityLimitAmount = ltvLimit !== null && securityValue
+    ? (securityValue * ltvLimit) / 100
+    : Infinity;
+  const eligibleAmount = requestedAmount !== null
+    ? Math.max(0, Math.min(requestedAmount, affordableAmount, securityLimitAmount))
+    : 0;
+  const eligibleEmi = eligibleAmount > 0 && annualInterestRate !== null && tenureMonths
+    ? calculateEmi(eligibleAmount, annualInterestRate, tenureMonths)
+    : 0;
+
+  return {
+    totalIncome,
+    totalExpenses,
+    netIncome,
+    existingMonthlyDebt,
+    requestedEmi,
+    totalMonthlyObligations,
+    foir,
+    dti,
+    ltv,
+    ltvLimit,
+    eligibleAmount,
+    eligibleEmi,
+    cibilScore
+  };
+}
+
+export function validate(form) {
   const errors = {};
-  if (!/^[A-Z0-9-]{4,24}$/i.test(form.customerNumber.trim())) errors.customerNumber = 'Enter a valid customer number (4–24 letters, numbers, or hyphens).';
-  if (form.initials && !/^[A-Z.]{1,5}$/i.test(form.initials.trim())) errors.initials = 'Use up to 5 letters or periods.';
-  if (form.name.trim().length < 2 || form.name.trim().length > 100) errors.name = 'Enter a full name between 2 and 100 characters.';
-  if (!form.rows.some((row) => row.type === 'Income' && Number(row.amount) > 0)) errors.income = 'Add at least one income amount greater than zero.';
-  form.rows.forEach((row) => {
-    if (!row.source.trim()) errors[`row-${row.id}-source`] = 'Enter an income or expense source.';
-    if (row.amount === '' || !/^\d+(\.\d{1,2})?$/.test(String(row.amount)) || Number(row.amount) < 0) errors[`row-${row.id}-amount`] = 'Enter a non-negative amount with up to 2 decimal places.';
+
+  const requiredFields = [
+    ['leadId', 'Lead ID is required.'],
+    ['applicantName', 'Applicant name is required.'],
+    ['productName', 'Loan product is required.'],
+    ['requestedAmount', 'Loan amount is required.'],
+    ['annualInterestRate', 'Interest rate is required.'],
+    ['tenureMonths', 'Tenure is required.'],
+    ['cibilScore', 'CIBIL score is required.'],
+    ['existingMonthlyDebt', 'Enter existing monthly debt, or 0 if you have none.']
+  ];
+  requiredFields.forEach(([field, message]) => {
+    if (!String(form[field] ?? '').trim()) errors[field] = message;
   });
-  for (const field of ['requestedAmount', 'monthlyDebtService', 'annualInterestRate', 'tenureMonths']) {
-    if (!form[field] || !/^\d+(\.\d{1,2})?$/.test(form[field]) || Number(form[field]) < 0) errors[field] = 'Enter a valid non-negative amount.';
-  }
-  if (Number(form.requestedAmount) <= 0) errors.requestedAmount = 'Enter a loan amount greater than zero.';
-  if (Number(form.annualInterestRate) <= 0 || Number(form.annualInterestRate) > 60) errors.annualInterestRate = 'Enter an annual rate above 0% and no more than 60%.';
-  if (!/^\d+$/.test(form.tenureMonths) || Number(form.tenureMonths) < 6 || Number(form.tenureMonths) > 480) errors.tenureMonths = 'Choose a term between 6 and 480 months.';
-  if (form.loanType === 'Home loan' && (!form.collateralValue || Number(form.collateralValue) <= 0)) errors.collateralValue = 'Property value is required for a home-loan LTV check.';
-  if (form.collateralValue && (!/^\d+(\.\d{1,2})?$/.test(form.collateralValue) || Number(form.collateralValue) <= 0)) errors.collateralValue = 'Enter a valid amount greater than zero.';
-  if (!/^\d{3}$/.test(form.cibilScore) || Number(form.cibilScore) < 300 || Number(form.cibilScore) > 900) errors.cibilScore = 'CIBIL score must be between 300 and 900.';
+
+  const rows = Array.isArray(form.rows) ? form.rows : [];
+  if (!rows.some(row => row.type === 'Income')) errors.income = 'Add at least one income entry.';
+  rows.forEach(row => {
+    const source = String(row.source ?? '').trim();
+    const amount = String(row.amount ?? '').trim();
+    if (!String(row.type ?? '').trim()) errors[`row-${row.id}-type`] = 'Entry type is required.';
+    if (!source) errors[`row-${row.id}-source`] = 'Source is required.';
+    if (!amount) errors[`row-${row.id}-amount`] = 'Amount is required.';
+  });
+
   return errors;
 }
 
-const styles = `
-.le-wrap{max-width:1440px;margin:0 auto;color:#243b3d}.le-card{overflow:hidden;border:1px solid #dbe5e2;border-radius:8px;background:#fff;box-shadow:0 6px 22px #193a6210}.le-heading{margin:0;padding:14px 20px;border-bottom:1px solid #e4ece9;color:#1d4947;text-align:center;font:700 18px Georgia,serif;text-decoration:underline}.le-form{padding:18px 3.5% 22px}.le-customer{display:grid;grid-template-columns:minmax(210px,.75fr) minmax(300px,1.2fr);gap:18px 30px;margin-bottom:17px}.le-name-fields{display:grid;grid-template-columns:78px minmax(0,1fr);gap:9px;align-items:end}.le-field{display:grid;gap:6px;min-width:0;color:#334d4f;font-size:11px;font-weight:700}.le-field input,.le-field select{width:100%;min-width:0;height:37px;padding:0 9px;border:1px solid #b9cbca;border-radius:4px;background:#fbfdfc;color:#273e40;font:400 12px Arial,sans-serif;outline:none}.le-field input:focus,.le-field select:focus{border-color:#177e7a;box-shadow:0 0 0 3px #177e7a19}.le-field input[aria-invalid=true]{border-color:#b83b3b;background:#fffafa}.le-error{color:#b33737;font-size:10px;font-weight:500;line-height:1.4}.le-table-wrap{overflow-x:auto;border:1px solid #becbc9;border-radius:3px}.le-table{width:100%;min-width:720px;border-collapse:collapse;table-layout:fixed}.le-table th,.le-table td{height:40px;padding:6px 10px;border-right:1px solid #cbd4d3;border-bottom:1px solid #cbd4d3;text-align:center;color:#30474a;font-size:11px}.le-table th{height:36px;background:#f1f5f4;font-weight:700}.le-table tr:last-child td{border-bottom:0}.le-table th:last-child,.le-table td:last-child{border-right:0}.le-table td input,.le-table td select{width:100%;height:31px;padding:0 7px;border:1px solid #c6d3d1;border-radius:3px;background:#fff;color:#2d4648;font-size:11px}.le-row-source{text-align:left!important}.le-remove{display:inline-grid;place-items:center;width:30px;height:29px;border-radius:4px;color:#845656}.le-remove:hover{background:#fbefef;color:#a02e2e}.le-add{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 10px;border:1px solid #ccddda;border-radius:4px;background:#f8fbfa;color:#176e67;font-size:11px;font-weight:700}.le-subheading{margin:21px 0 11px;color:#365357;font-size:12px;font-weight:700}.le-input-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 18px}.le-metrics{display:grid;grid-template-columns:repeat(7,minmax(92px,1fr));gap:11px;margin-top:17px}.le-metric{display:grid;gap:6px;color:#334d4f;font-size:10px;font-weight:700}.le-metric input{width:100%;height:36px;padding:0 8px;border:1px solid #9cb6c1;border-radius:3px;background:#f8fbfc;color:#24464e;font-size:12px;text-align:center}.le-metric input[readonly]{background:#f2f7f7}.le-decision{display:flex;align-items:center;justify-content:center;gap:10px;margin:15px auto 0;color:#307e51;font-size:12px;font-weight:700}.le-decision input{width:min(200px,48vw);height:35px;border:1px solid #91bd9b;border-radius:3px;background:#f7fbf7;color:#3d764b;text-align:center;font-weight:700}.le-decision.pending{color:#8b6822}.le-decision.pending input{border-color:#d8c492;background:#fffdf7;color:#80621e}.le-actions{display:flex;justify-content:center;gap:12px;margin-top:20px}.le-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 16px;border:1px solid #d1ddda;border-radius:5px;background:white;color:#435a5c;font-size:12px;font-weight:700}.le-btn:hover{background:#f4f8f7}.le-submit{border-color:#177e7a;background:#177e7a;color:white}.le-submit:hover{background:#0c6662}.le-btn:disabled{opacity:.7;cursor:wait}.le-message{margin:0 0 13px;padding:11px 13px;border:1px solid #c6dfd2;border-radius:5px;background:#f1faf5;color:#276b4f;font-size:11px;line-height:1.5}.le-message.error{border-color:#e7cccc;background:#fff7f7;color:#a43838}.le-spin{animation:le-spin 1s linear infinite}@keyframes le-spin{to{transform:rotate(360deg)}}
-@media(max-width:920px){.le-customer{grid-template-columns:1fr 1.4fr}.le-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
-@media(max-width:620px){.le-form{padding:15px}.le-customer{grid-template-columns:1fr;gap:14px}.le-input-grid{grid-template-columns:1fr}.le-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.le-actions{display:grid;grid-template-columns:1fr 1fr}.le-btn{padding:0 10px}.le-name-fields{grid-template-columns:68px minmax(0,1fr)}}
-`;
+function approvalLetter(form, assessment) {
+  return `Dear ${form.applicantName},
 
-const assessmentStyles = `
-.le-wrap{max-width:1420px;padding:0 20px 32px;color:#1f3436;font-family:Manrope,Arial,sans-serif}
-.le-intro{margin:0 0 14px;padding:12px 15px;border-left:3px solid #177e7a;background:#f1f7f5;color:#52696b;font-size:12px;line-height:1.6}
-.le-assessment-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,.78fr);align-items:start;gap:18px}
-.le-form-panel,.le-results-panel{min-width:0;border:1px solid #dbe5e2;border-radius:7px;background:#fff;box-shadow:0 5px 18px rgba(24,51,58,.035)}
-.le-form-panel{overflow:hidden;padding:0}
-.le-section{padding:20px 22px;border-bottom:1px solid #e7eeec}
-.le-section:last-of-type{border-bottom:0}
-.le-section-heading{display:flex;align-items:flex-start;gap:11px;margin-bottom:16px}
-.le-section-index{display:grid;place-items:center;flex:0 0 29px;width:29px;height:29px;border:1px solid #d1e3df;border-radius:5px;background:#eef6f4;color:#176e67;font-size:11px;font-weight:800}
-.le-section-heading h2{margin:0;color:#20464a;font-size:14px;font-weight:750}
-.le-section-heading p{margin:4px 0 0;color:#718487;font-size:11px;line-height:1.5}
-.le-form-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
-.le-form-fields .le-field{font-size:11px}
-.le-form-fields .le-field input,.le-form-fields .le-field select{height:40px;border-color:#cbd8d6;border-radius:5px;background:#fff;font-family:inherit;font-size:12px}
-.le-field small{font-weight:500}
-.le-table-wrap{border-color:#dce6e4;border-radius:5px}
-.le-table{min-width:600px}
-.le-table th,.le-table td{height:43px;border-color:#e0e8e6;font-size:11px}
-.le-table th{height:38px;background:#f4f8f7;color:#52696b}
-.le-table td input,.le-table td select{height:34px;border-color:#ccd9d7;border-radius:4px;font-family:inherit;font-size:11px}
-.le-row-source{text-align:left!important}
-.le-row-source input{text-align:left}
-.le-remove{width:30px;height:30px}
-.le-add{margin-top:11px;padding:8px 11px;border-color:#cfdfdc;border-radius:5px;background:#f7faf9;color:#176e67;font-family:inherit;font-size:11px;cursor:pointer}
-.le-add:hover{background:#eaf4f1}
-.le-total-row th,.le-total-row td{height:38px;background:#fafcfb;font-weight:700}
-.le-form-actions{display:flex;justify-content:flex-end;gap:9px;padding:16px 22px;background:#fafcfb}
-.le-btn{min-height:39px;border-radius:5px;font-family:inherit;font-size:11px;cursor:pointer}
-.le-submit{border-color:#177e7a;background:#177e7a;color:#fff}
-.le-submit:hover{background:#0c6662}
-.le-results-panel{position:sticky;top:16px;overflow:hidden}
-.le-results-head{padding:18px 19px 15px;border-bottom:1px solid #e7eeec}
-.le-results-kicker{color:#758789;font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
-.le-results-head h2{margin:5px 0 0;color:#20464a;font-size:17px}
-.le-decision-banner{display:flex;align-items:flex-start;gap:10px;margin:15px 16px 0;padding:12px;border:1px solid #d4e6dd;border-radius:5px;background:#f2faf5;color:#286c4c}
-.le-decision-banner.review{border-color:#e9dfbd;background:#fffaf0;color:#83631f}
-.le-decision-banner.outside{border-color:#eed1d1;background:#fff6f6;color:#9b3a3a}
-.le-decision-banner svg{flex:none;margin-top:1px}
-.le-decision-banner strong{display:block;font-size:12px}
-.le-decision-banner span{display:block;margin-top:3px;font-size:10px;line-height:1.45}
-.le-emi-block{padding:18px 17px 14px;border-bottom:1px solid #e7eeec}
-.le-emi-label{color:#6d8082;font-size:10px;font-weight:700}
-.le-emi-value{display:block;margin-top:4px;color:#1d4d4c;font-size:25px;font-variant-numeric:tabular-nums;font-weight:800}
-.le-emi-footnote{margin-top:4px;color:#77888a;font-size:10px;line-height:1.45}
-.le-metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:13px 15px}
-.le-metric-card{display:grid;gap:5px;min-width:0;padding:10px;border:1px solid #e1e9e7;border-radius:5px;background:#fff}
-.le-metric-card span{color:#6f8183;font-size:9px;font-weight:700}
-.le-metric-card strong{overflow-wrap:anywhere;color:#24494c;font-size:16px;font-variant-numeric:tabular-nums}
-.le-metric-card small{color:#829193;font-size:9px;line-height:1.4}
-.le-capacity{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 15px 15px}
-.le-capacity-item{padding:10px;border-left:2px solid #8bb9aa;background:#f6faf8}
-.le-capacity-item span{display:block;color:#708284;font-size:9px;font-weight:700}
-.le-capacity-item strong{display:block;margin-top:4px;color:#24534f;font-size:13px;overflow-wrap:anywhere}
-.le-review-list{display:grid;gap:7px;margin:0;padding:13px 16px;border-top:1px solid #e7eeec;list-style:none}
-.le-review-list li{display:flex;align-items:flex-start;gap:7px;color:#6d5b35;font-size:10px;line-height:1.45}
-.le-review-list svg{flex:none;color:#a37c2c}
-.le-guidance{border-top:1px solid #e7eeec}
-.le-guidance summary{padding:13px 16px;color:#35575a;font-size:10px;font-weight:750;cursor:pointer}
-.le-guidance-content{display:grid;gap:8px;padding:0 16px 15px;color:#647779;font-size:10px;line-height:1.5}
-.le-guidance-content p{margin:0}
-.le-disclaimer{margin:0;padding:11px 16px;border-top:1px solid #e7eeec;background:#fafcfb;color:#7a898a;font-size:9px;line-height:1.5}
-.le-inline-error{margin:10px 0 0}
-.le-score-hint{margin:0;color:#748688;font-size:10px;font-weight:500}
-@media(max-width:980px){.le-assessment-layout{grid-template-columns:minmax(0,1fr)}.le-results-panel{position:static}.le-results-panel{display:grid;grid-template-columns:1fr 1fr}.le-results-head,.le-guidance,.le-disclaimer{grid-column:1/-1}.le-results-head{border-bottom:1px solid #e7eeec}.le-emi-block{border-right:1px solid #e7eeec}.le-review-list{grid-column:1/-1}.le-capacity{align-content:center}}
-@media(max-width:620px){.le-wrap{padding:0 12px 24px}.le-section{padding:17px 14px}.le-form-fields{grid-template-columns:1fr;gap:12px}.le-form-actions{padding:13px 14px}.le-results-panel{display:block}.le-emi-block{border-right:0}.le-results-head,.le-guidance,.le-disclaimer,.le-review-list{grid-column:auto}.le-metric-grid{gap:7px;padding:11px 12px}.le-capacity{padding:0 12px 13px}.le-customer{margin-bottom:0}.le-name-fields{grid-template-columns:66px minmax(0,1fr)}}
-`;
+With reference to your interest in availing of ${form.productName} from us for a requested loan amount of Rs. ${money(numberValue(form.requestedAmount))}, and based on the information and details provided by you, we are pleased to inform you that your application has been assessed for preliminary eligibility.
+
+Accordingly, an in-principle loan approval for an amount of Rs. ${money(assessment.eligibleAmount)} has been accorded, subject to verification of the documents submitted, satisfactory credit assessment, and compliance with the applicable lending policies, terms, and conditions of the Bank/Financial Institution. The rate of Interest shall be ${form.annualInterestRate}% and the EMI will be Rs. ${money(assessment.eligibleEmi)} for a tenure of ${form.tenureMonths} months.
+
+The final loan amount, applicable interest rate, repayment tenure, EMI, and other relevant terms and conditions will be communicated to you upon completion of the required verification and approval formalities.
+
+Please note that this communication is an intimation of in-principle approval only and does not constitute a final loan sanction or an unconditional commitment to disburse the loan.
+
+Acceptance to Proceed
+
+If you wish to proceed with the loan application and the subsequent disbursement process for the above-mentioned eligible loan amount of Rs. ${money(assessment.eligibleAmount)}, kindly confirm your acceptance by replying to this email.
+
+Upon receipt of your acceptance, the application will proceed to the next stage, subject to the applicable verification and approval requirements.
+
+The Key Facts Statement (KFS), containing the applicable details of the loan, including the loan terms, charges and fees, EMI amount, and other relevant disclosures, along with the loan sanction terms and loan agreement, as applicable, will be provided to you before final disbursement.
+
+Should you require any further clarification or assistance, please feel free to contact us.
+
+Thank you for your interest in our loan services. We look forward to assisting you.
+
+Yours sincerely,
+<Authorized_Signatory>
+<Designation>
+<Bank/Financial_Institution_Name>
+<Contact_Details>`;
+}
+
+function actionFor(value, goodLimit, reviewLimit) {
+  if (!Number.isFinite(value)) return 'Enter details';
+  if (value <= goodLimit) return 'Within limit';
+  if (value <= reviewLimit) return 'Review';
+  return 'Outside limit';
+}
 
 export default function LoanEligibilityPage() {
+  const router = useRouter();
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
+  const [assessment, setAssessment] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState(null);
-  const [decision, setDecision] = useState('');
+  const [formError, setFormError] = useState('');
+  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
+  const [leads, setLeads] = useState([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [leadSearch, setLeadSearch] = useState('');
+  const [leadPickerError, setLeadPickerError] = useState('');
 
-  const totalIncome = form.rows.filter((row) => row.type === 'Income').reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-  const totalExpense = form.rows.filter((row) => row.type === 'Expense').reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
-  const netIncome = totalIncome - totalExpense;
-  const existingDebt = Number(form.monthlyDebtService) || 0;
-  const requestedAmount = Number(form.requestedAmount) || 0;
-  const collateralValue = Number(form.collateralValue) || 0;
-  const annualInterestRate = Number(form.annualInterestRate) || 0;
-  const tenureMonths = Number(form.tenureMonths) || 0;
-  const proposedEmi = calculateEmi(requestedAmount, annualInterestRate, tenureMonths);
-  const totalDebtService = existingDebt + proposedEmi;
-  const dtiValue = totalIncome > 0 ? totalDebtService / totalIncome * 100 : null;
-  const foirValue = netIncome > 0 ? totalDebtService / netIncome * 100 : null;
-  const ltvValue = collateralValue > 0 ? requestedAmount / collateralValue * 100 : null;
-  const dscrValue = totalDebtService > 0 ? netIncome / totalDebtService : null;
-  const ndirValue = totalIncome > 0 ? (netIncome - totalDebtService) / totalIncome * 100 : null;
-  const maxAffordableEmi = Math.max(0, netIncome * 0.5 - existingDebt);
-  const maxAffordableLoan = calculatePrincipal(maxAffordableEmi, annualInterestRate, tenureMonths);
-  const homeLtvLimit = requestedAmount <= 3000000 ? 90 : requestedAmount <= 7500000 ? 80 : 75;
-  const screeningFlags = [];
-  if (foirValue !== null && foirValue > 50) screeningFlags.push('Proposed repayments exceed the 50% indicative FOIR ceiling.');
-  if (ndirValue !== null && ndirValue < 0) screeningFlags.push('Monthly income does not cover declared expenses and loan repayments.');
-  if (Number(form.cibilScore) > 0 && Number(form.cibilScore) < 650) screeningFlags.push('Credit score is below the indicative 650 screening floor.');
-  if (form.loanType === 'Home loan' && ltvValue !== null && ltvValue > homeLtvLimit) screeningFlags.push(`Requested home-loan LTV exceeds the ${homeLtvLimit}% RBI benchmark for this loan amount.`);
-  const reviewFlags = [];
-  if (foirValue !== null && foirValue > 40 && foirValue <= 50) reviewFlags.push('FOIR is above the preferred 40% screening band.');
-  if (Number(form.cibilScore) >= 650 && Number(form.cibilScore) < 750) reviewFlags.push('Credit score is below the commonly preferred 750 range.');
-  if (dscrValue !== null && dscrValue < 1.25) reviewFlags.push('Estimated debt-service coverage is below 1.25x.');
-  if (form.loanType === 'Home loan' && ltvValue !== null && ltvValue > homeLtvLimit - 5 && ltvValue <= homeLtvLimit) reviewFlags.push('Home-loan LTV is close to the RBI benchmark limit.');
-  const localDecision = screeningFlags.length ? 'Outside indicative range' : reviewFlags.length ? 'Manual review recommended' : 'Within indicative range';
-  const metric = (value, suffix = '%') => value !== null && Number.isFinite(value) ? `${value.toFixed(2)}${suffix}` : '—';
-  const dti = metric(dtiValue);
-  const ltv = metric(ltvValue);
-  const dscr = metric(dscrValue, 'x');
-  const ndir = metric(ndirValue);
-  const foir = metric(foirValue);
+  const securedProduct = isSecuredProduct(form.productName);
+  const hasLtvLimit = Number.isFinite(assessment?.ltvLimit);
+  const cibilAction = !assessment
+    ? 'Pending'
+    : assessment.cibilScore >= POLICY.cibilFloor ? 'Within limit' : 'Outside limit';
+  const ltvAction = !assessment
+    ? 'Pending'
+    : !Number.isFinite(assessment.ltv)
+      ? 'Optional'
+    : hasLtvLimit
+      ? actionFor(assessment.ltv, assessment.ltvLimit - 5, assessment.ltvLimit)
+      : 'Calculated';
+  const decision = assessment
+    ? assessment.decision
+    : 'Assessment pending';
+
+  async function openLeadPicker() {
+    setLeadPickerOpen(true);
+    setLeadSearch('');
+    setLeadPickerError('');
+    setLeadsLoading(true);
+    try {
+      setLeads(await getAllLeads());
+    } catch (error) {
+      setLeadPickerError(error instanceof Error ? error.message : 'Unable to load leads.');
+      setLeads([]);
+    } finally {
+      setLeadsLoading(false);
+    }
+  }
+
+  function selectLead(lead) {
+    const applicantName = getLeadName(lead).trim();
+    const productName = getLeadProduct(lead);
+    const nextValues = {
+      leadId: getLeadId(lead),
+      ...(applicantName ? { applicantName } : {}),
+      ...(productName ? { productName } : {})
+    };
+    const requestedAmount = leadValue(lead, 'loanAmount', 'loan_amount', 'requestedAmount', 'requested_amount', 'amount');
+    const annualInterestRate = leadValue(lead, 'annualInterestRate', 'annual_interest_rate', 'interestRate', 'interest_rate');
+    let tenureMonths = leadValue(lead, 'tenureMonths', 'tenure_months', 'loanTenureMonths', 'loan_tenure_months');
+    if (tenureMonths === '') {
+      const tenure = Number(leadValue(lead, 'tenure'));
+      const tenureUnit = String(leadValue(lead, 'tenureUnit', 'tenure_unit') || 'month').toLowerCase();
+      const multiplier = /year/.test(tenureUnit) ? 12 : /quarter/.test(tenureUnit) ? 3 : 1;
+      if (Number.isFinite(tenure) && tenure > 0 && Number.isInteger(tenure * multiplier)) {
+        tenureMonths = String(tenure * multiplier);
+      }
+    }
+    const securityValue = leadValue(lead, 'securityValue', 'security_value', 'collateral', 'securityAmount', 'security_amount');
+    const existingMonthlyDebt = leadValue(lead, 'existingMonthlyDebt', 'existing_monthly_debt', 'monthlyEmi', 'monthly_emi');
+    const cibilScore = leadValue(lead, 'cibilScore', 'cibil_score');
+    const incomeSource = String(leadValue(lead, 'incomeSource', 'income_source') || '').trim();
+    const monthlyIncome = leadValue(lead, 'grossMonthlyIncome', 'gross_monthly_income', 'monthlyIncome', 'monthly_income');
+    const annualIncome = leadValue(lead, 'annualIncome', 'annual_income');
+    const takeHomePay = leadValue(lead, 'takeHomePay', 'take_home_pay');
+    const parsedMonthlyIncome = monthlyIncome !== ''
+      ? Number(String(monthlyIncome).replace(/,/g, ''))
+      : annualIncome !== ''
+        ? Number(String(annualIncome).replace(/,/g, '')) / 12
+        : Number(String(takeHomePay).replace(/,/g, ''));
+    const importedIncome = Number.isFinite(parsedMonthlyIncome) && parsedMonthlyIncome > 0
+      ? { source: incomeSource || 'Monthly income', amount: parsedMonthlyIncome.toFixed(2) }
+      : null;
+
+    [
+      ['requestedAmount', requestedAmount],
+      ['annualInterestRate', annualInterestRate],
+      ['tenureMonths', tenureMonths],
+      ['securityValue', securityValue],
+      ['existingMonthlyDebt', existingMonthlyDebt],
+      ['cibilScore', cibilScore]
+    ].forEach(([field, value]) => {
+      if (value !== '') nextValues[field] = String(value).replace(/,/g, '').trim();
+    });
+
+    setForm(current => {
+      let rows = current.rows;
+      if (importedIncome && !rows.some(row =>
+        row.type === 'Income' &&
+        row.source.trim().toLowerCase() === importedIncome.source.toLowerCase()
+      )) {
+        const emptyIncomeRow = rows.find(row =>
+          row.type === 'Income' && !row.source.trim() && !row.amount.trim()
+        );
+        if (emptyIncomeRow) {
+          rows = rows.map(row => row.id === emptyIncomeRow.id
+            ? { ...row, ...importedIncome }
+            : row);
+        } else if (rows.length < MAX_FINANCIAL_ROWS) {
+          rows = [...rows, {
+            ...makeRow(Math.max(0, ...rows.map(row => row.id)) + 1),
+            ...importedIncome
+          }];
+        }
+      }
+      return { ...current, ...nextValues, rows };
+    });
+    setErrors(current => Object.fromEntries(
+      Object.entries(current).map(([field, message]) => [
+        field,
+        Object.prototype.hasOwnProperty.call(nextValues, field) || /^row-\d+-(source|amount|type)$/.test(field) || field === 'income'
+          ? ''
+          : message
+      ])
+    ));
+    setAssessment(null);
+    setFormError('');
+    setLeadPickerOpen(false);
+  }
 
   function update(field, value) {
-    setForm((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: '' }));
-    setMessage(null);
-    setDecision('');
+    setForm(current => ({ ...current, [field]: value }));
+    setErrors(current => ({
+      ...current,
+      [field]: '',
+      ...(field === 'productName' ? { securityValue: '' } : {})
+    }));
+    setAssessment(null);
+    setFormError('');
   }
 
   function updateRow(id, field, value) {
-    setForm((current) => ({ ...current, rows: current.rows.map((row) => row.id === id ? { ...row, [field]: value } : row) }));
-    setErrors((current) => ({ ...current, [`row-${id}-${field}`]: '' }));
-    setMessage(null);
-    setDecision('');
+    setForm(current => ({
+      ...current,
+      rows: current.rows.map(row => row.id === id ? { ...row, [field]: value } : row)
+    }));
+    setErrors(current => {
+      const sourceErrors = field === 'source' || field === 'type'
+        ? Object.fromEntries(form.rows.map(row => [`row-${row.id}-source`, '']))
+        : {};
+      return {
+        ...current,
+        ...sourceErrors,
+        [`row-${id}-source`]: '',
+        [`row-${id}-amount`]: '',
+        [`row-${id}-type`]: '',
+        income: ''
+      };
+    });
+    setAssessment(null);
+    setFormError('');
+  }
+
+  function addRow() {
+    setForm(current => {
+      if (current.rows.length >= MAX_FINANCIAL_ROWS) return current;
+      return {
+        ...current,
+        rows: [...current.rows, makeRow(Math.max(0, ...current.rows.map(row => row.id)) + 1)]
+      };
+    });
+    setErrors(current => ({ ...current, rows: '' }));
+    setAssessment(null);
+    setFormError('');
+  }
+
+  function removeRow(id) {
+    setForm(current => ({
+      ...current,
+      rows: current.rows.filter(row => row.id !== id)
+    }));
+    setErrors(current => ({
+      ...current,
+      ...Object.fromEntries(form.rows.map(row => [`row-${row.id}-source`, ''])),
+      [`row-${id}-source`]: '',
+      [`row-${id}-amount`]: '',
+      rows: '',
+      income: ''
+    }));
+    setAssessment(null);
+    setFormError('');
   }
 
   async function submit(event) {
     event.preventDefault();
+    if (saving) return;
     const nextErrors = validate(form);
     setErrors(nextErrors);
-    const invalid = Object.keys(nextErrors)[0];
-    if (invalid) {
-      const field = invalid.startsWith('row-') ? `le-${invalid}` : `le-${invalid}`;
-      document.getElementById(field)?.focus();
+    setFormError('');
+
+    if (Object.keys(nextErrors).length) {
+      setAssessment(null);
       return;
+    }
+    if (!window.confirm('Submit this eligibility assessment for calculation?')) return;
+
+    const result = calculateAssessment(form);
+    const reasons = [];
+    if (result.cibilScore < POLICY.cibilFloor) {
+      reasons.push(`CIBIL score is below the indicative ${POLICY.cibilFloor} screening floor.`);
+    }
+    if (result.eligibleAmount <= 0) {
+      reasons.push('The entered income and expenses do not support an eligible loan amount.');
+    }
+
+    const reviewReasons = [];
+    if (result.foir > POLICY.reviewFoir && result.foir <= POLICY.maxFoir) {
+      reviewReasons.push(`FOIR is above ${POLICY.reviewFoir}% and requires a manual review.`);
+    }
+    if (result.dti > POLICY.reviewFoir && result.dti <= POLICY.maxFoir) {
+      reviewReasons.push(`DTI is above ${POLICY.reviewFoir}% and requires a manual review.`);
+    }
+    if (
+      result.ltv !== null &&
+      result.ltvLimit !== null &&
+      result.ltv > result.ltvLimit - 5 &&
+      result.ltv <= result.ltvLimit
+    ) {
+      reviewReasons.push('LTV is close to the indicative limit and requires a manual review.');
+    }
+    if (result.eligibleAmount > 0 && result.eligibleAmount < numberValue(form.requestedAmount)) {
+      reviewReasons.push('The requested amount is higher than the indicative eligible amount.');
     }
 
     setSaving(true);
-    setMessage(null);
-    setDecision(localDecision);
     try {
-      const result = await assessLoanEligibility({
-        customer_number: form.customerNumber.trim(), customer_name: `${form.initials.trim()} ${form.name.trim()}`.trim(),
-        requested_amount: requestedAmount, collateral_value: form.collateralValue ? collateralValue : null,
-        loan_type: form.loanType, annual_interest_rate: annualInterestRate, tenure_months: tenureMonths,
-        estimated_emi: proposedEmi, monthly_debt_service: existingDebt,
-        income_expenses: form.rows.map((row) => ({ type: row.type.toLowerCase(), source: row.source.trim(), amount: Number(row.amount) })),
-        cibil_score: Number(form.cibilScore), calculated_metrics: {
-          total_income: totalIncome, total_expense: totalExpense, net_income: netIncome,
-          existing_monthly_debt: existingDebt, proposed_emi: proposedEmi, total_monthly_debt_service: totalDebtService,
-          max_affordable_emi: maxAffordableEmi, max_affordable_loan: maxAffordableLoan,
-          foir: foir === '—' ? null : foir, dti: dti === '—' ? null : dti,
-          ltv: ltv === '—' ? null : ltv, dscr: dscr === '—' ? null : dscr, ndir: ndir === '—' ? null : ndir
+      const apiResult = await assessLoanEligibility({
+        lead_id: form.leadId.trim(),
+        customer_name: form.applicantName.trim(),
+        product: form.productName,
+        requested_amount: numberValue(form.requestedAmount),
+        annual_interest_rate: numberValue(form.annualInterestRate),
+        tenure_months: numberValue(form.tenureMonths),
+        security_value: numberValue(form.securityValue),
+        income_expenses: form.rows
+          .filter(row => row.source.trim() || row.amount !== '')
+          .map(row => ({
+            type: row.type.toLowerCase(),
+            source: row.source.trim(),
+            amount: numberValue(row.amount) || 0
+          })),
+        cibil_score: result.cibilScore,
+        calculated_metrics: {
+          total_income: result.totalIncome,
+          total_expense: result.totalExpenses,
+          net_income: result.netIncome,
+          existing_monthly_debt: result.existingMonthlyDebt,
+          proposed_emi: result.requestedEmi,
+          foir: result.foir,
+          dti: result.dti,
+          ltv: result.ltv,
+          max_affordable_loan: result.eligibleAmount
         }
       });
-      if (result.configured) {
-        const resultDecision = result.result?.data?.decision ?? result.result?.decision ?? result.result?.data?.eligible;
-        setDecision(resultDecision === undefined ? localDecision : typeof resultDecision === 'boolean' ? (resultDecision ? 'Eligible' : 'Not eligible') : String(resultDecision));
-        setMessage({ type: 'success', text: result.result?.message || 'Eligibility assessment completed.' });
-      } else {
-        setDecision(localDecision);
-        setMessage({ type: 'info', text: 'This is an indicative screening only. Final eligibility, pricing and terms depend on the lender’s credit policy and document verification.' });
+
+      const remote = apiResult.configured
+        ? apiResult.result?.data || apiResult.result
+        : null;
+      const remoteDecision = remote?.decision ?? remote?.eligible;
+      const remoteEligibleAmount = numberValue(
+        remote?.eligible_amount ?? remote?.eligibleAmount ?? remote?.max_eligible_amount
+      );
+      let finalDecision = reasons.length
+        ? 'Not Eligible'
+        : reviewReasons.length
+          ? 'Refer for Review'
+          : 'Eligible';
+      let finalReasons = reasons;
+      let finalEligibleAmount = result.eligibleAmount;
+
+      if (remoteEligibleAmount !== null && remoteEligibleAmount >= 0) {
+        finalEligibleAmount = remoteEligibleAmount;
       }
+
+      const reducedAmount = finalEligibleAmount > 0 &&
+        finalEligibleAmount < numberValue(form.requestedAmount);
+      if (remoteDecision === false) {
+        finalDecision = 'Not Eligible';
+        finalReasons = [remote?.message || 'The lender assessment did not approve this application.'];
+      } else if (remoteDecision === true) {
+        finalDecision = finalEligibleAmount <= 0
+          ? 'Not Eligible'
+          : reducedAmount || reviewReasons.length
+            ? 'Refer for Review'
+            : 'Eligible';
+        finalReasons = finalEligibleAmount <= 0
+          ? ['The lender assessment returned no eligible loan amount.']
+          : reviewReasons;
+      } else if (typeof remoteDecision === 'string') {
+        if (/not eligible|ineligible|reject|declin|outside/i.test(remoteDecision)) {
+          finalDecision = 'Not Eligible';
+          finalReasons = [remote?.message || 'The lender assessment did not approve this application.'];
+        } else if (/refer|review|pending/i.test(remoteDecision)) {
+          finalDecision = 'Refer for Review';
+          finalReasons = [remote?.message || 'The lender assessment requires a manual review.'];
+        } else if (/eligible|approve|accept/i.test(remoteDecision)) {
+          finalDecision = finalEligibleAmount <= 0
+            ? 'Not Eligible'
+            : reducedAmount || reviewReasons.length
+              ? 'Refer for Review'
+              : 'Eligible';
+          finalReasons = finalEligibleAmount <= 0
+            ? ['The lender assessment returned no eligible loan amount.']
+            : reviewReasons;
+        } else {
+          finalDecision = 'Refer for Review';
+          finalReasons = [remote?.message || 'The lender returned a result that requires manual review.'];
+        }
+      } else if (!reasons.length) {
+        finalReasons = reviewReasons;
+      }
+
+      const finalEligibleEmi = finalEligibleAmount > 0
+        ? calculateEmi(
+          finalEligibleAmount,
+          numberValue(form.annualInterestRate),
+          numberValue(form.tenureMonths)
+        )
+        : 0;
+
+      setAssessment({
+        ...result,
+        eligibleAmount: finalEligibleAmount,
+        eligibleEmi: finalEligibleEmi,
+        decision: finalDecision,
+        reasons: finalReasons,
+        isEligible: finalDecision === 'Eligible' && finalEligibleAmount > 0
+      });
     } catch (error) {
-      setMessage({ type: 'error', text: error.message || 'Unable to assess eligibility.' });
+      setFormError(error instanceof Error ? error.message : 'Unable to assess eligibility.');
+      setAssessment(null);
     } finally {
       setSaving(false);
     }
   }
 
+  function saveAndContinue() {
+    if (!assessment?.isEligible || saving) return;
+
+    try {
+      const fullName = form.applicantName.trim().split(/\s+/);
+      const applicationId = `ELIG-${Date.now()}`;
+      const application = {
+        id: applicationId,
+        customer: form.applicantName.trim(),
+        customerName: form.applicantName.trim(),
+        leadId: form.leadId.trim(),
+        product: form.productName,
+        productName: form.productName,
+        amount: String(assessment.eligibleAmount),
+        status: 'Draft',
+        applicationDate: new Date().toISOString().slice(0, 10),
+        eligibilityAssessment: {
+          decision: assessment.decision,
+          requestedAmount: numberValue(form.requestedAmount),
+          eligibleAmount: assessment.eligibleAmount,
+          interestRate: numberValue(form.annualInterestRate),
+          tenureMonths: numberValue(form.tenureMonths),
+          emi: assessment.eligibleEmi,
+          foir: assessment.foir,
+          dti: assessment.dti,
+          ltv: assessment.ltv,
+          cibilScore: assessment.cibilScore
+        },
+        retailLoanForm: {
+          firstName: fullName[0] || '',
+          middleName: fullName.length > 2 ? fullName.slice(1, -1).join(' ') : '',
+          lastName: fullName.length > 1 ? fullName[fullName.length - 1] : '',
+          productName: form.productName,
+          loanAmount: String(assessment.eligibleAmount),
+          interestRate: String(numberValue(form.annualInterestRate)),
+          tenureMonths: String(numberValue(form.tenureMonths)),
+          securityValue: securedProduct ? String(numberValue(form.securityValue)) : ''
+        }
+      };
+
+      persistRetailLoanApplication(application);
+      router.push(`/loan_application?edit=${encodeURIComponent(applicationId)}`);
+    } catch (error) {
+      setFormError(error instanceof Error
+        ? `The eligibility was checked, but could not be saved: ${error.message}`
+        : 'The eligibility was checked, but could not be saved in this browser.');
+    }
+  }
+
   function reset() {
+    if (!window.confirm('Cancel this eligibility assessment? All entered details and results will be cleared.')) return;
     setForm(initialForm());
     setErrors({});
-    setMessage(null);
-    setDecision('');
+    setAssessment(null);
+    setFormError('');
   }
 
-  function addRow() {
-    const id = Math.max(0, ...form.rows.map((row) => row.id)) + 1;
-    setForm((current) => ({ ...current, rows: [...current.rows, makeRow(id, 'Income', '')] }));
-  }
-
-  function removeRow(id) {
-    setForm((current) => ({ ...current, rows: current.rows.filter((row) => row.id !== id) }));
-    setErrors((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`row-${id}-`))));
-  }
-
-  const decisionTone = decision.includes('Outside') ? 'outside' : decision.includes('review') ? 'review' : '';
-  const cibilBand = !form.cibilScore ? 'Not entered' : Number(form.cibilScore) >= 750 ? 'Strong range' : Number(form.cibilScore) >= 650 ? 'Review range' : 'Below screening floor';
-  const monthlySurplus = netIncome - totalDebtService;
+  const totals = form.rows.reduce((result, row) => {
+    const amount = numberValue(row.amount) || 0;
+    result[row.type] += amount;
+    return result;
+  }, { Income: 0, Expense: 0 });
+  const filteredLeads = leads.filter(lead => (
+    `${getLeadId(lead)} ${getLeadName(lead)} ${getLeadProduct(lead)}`
+      .toLowerCase()
+      .includes(leadSearch.trim().toLowerCase())
+  ));
 
   return (
     <AppShell title="Loan Eligibility">
       <style>{styles}</style>
-      <style>{assessmentStyles}</style>
-      <main className="le-wrap">
-        <PageHeader title="Loan Eligbility" description="Set effective-dated interest tiers by loan product and tenure." marquee />
-        {message && <div className={`le-message${message.type === 'error' ? ' error' : ''}`} role={message.type === 'error' ? 'alert' : 'status'}>{message.text}</div>}
-        <div className="le-assessment-layout">
-          <form className="le-form-panel" onSubmit={submit} noValidate>
-            <section className="le-section" aria-labelledby="le-applicant-heading">
-              <header className="le-section-heading"><span className="le-section-index">01</span><div><h2 id="le-applicant-heading">Applicant & loan request</h2><p>Identify the applicant and set the proposed loan terms.</p></div></header>
-              <div className="le-form-fields">
-                <label className="le-field" htmlFor="le-customerNumber">Customer number *<input id="le-customerNumber" value={form.customerNumber} onChange={(event) => update('customerNumber', event.target.value.toUpperCase())} maxLength={24} autoComplete="off" aria-invalid={Boolean(errors.customerNumber)} />{errors.customerNumber && <small className="le-error">{errors.customerNumber}</small>}</label>
-                <label className="le-field" htmlFor="le-name">Applicant name *<input id="le-name" value={form.name} onChange={(event) => update('name', event.target.value)} maxLength={100} autoComplete="name" aria-invalid={Boolean(errors.name)} />{errors.name && <small className="le-error">{errors.name}</small>}</label>
-                <label className="le-field" htmlFor="le-loanType">Loan product *<select id="le-loanType" value={form.loanType} onChange={(event) => update('loanType', event.target.value)}><option>Personal loan</option><option>Home loan</option><option>Vehicle loan</option><option>Business loan</option><option>Other secured loan</option></select></label>
-                <label className="le-field" htmlFor="le-requestedAmount">Requested amount (₹) *<input id="le-requestedAmount" type="number" min="1" step="1000" inputMode="decimal" value={form.requestedAmount} onChange={(event) => update('requestedAmount', event.target.value)} aria-invalid={Boolean(errors.requestedAmount)} />{errors.requestedAmount && <small className="le-error">{errors.requestedAmount}</small>}</label>
-                <label className="le-field" htmlFor="le-annualInterestRate">Expected annual interest rate (%) *<input id="le-annualInterestRate" type="number" min="0.01" max="60" step="0.01" inputMode="decimal" value={form.annualInterestRate} onChange={(event) => update('annualInterestRate', event.target.value)} aria-invalid={Boolean(errors.annualInterestRate)} />{errors.annualInterestRate && <small className="le-error">{errors.annualInterestRate}</small>}</label>
-                <label className="le-field" htmlFor="le-tenureMonths">Loan term (months) *<input id="le-tenureMonths" type="number" min="6" max="480" step="1" value={form.tenureMonths} onChange={(event) => update('tenureMonths', event.target.value)} aria-invalid={Boolean(errors.tenureMonths)} />{errors.tenureMonths && <small className="le-error">{errors.tenureMonths}</small>}</label>
-              </div>
-            </section>
+      <div className="eligibility-page">
+        <header className="eligibility-heading">
+          <h1 className="eligibility-title">Loan Eligibility</h1>
+          <output className={`eligibility-status ${
+            !assessment
+              ? 'pending'
+              : assessment.isEligible
+                ? 'checked'
+                : assessment.decision === 'Refer for Review'
+                  ? 'review'
+                  : 'rejected'
+          }`}>
+            {decision}
+          </output>
+        </header>
 
-            <section className="le-section" aria-labelledby="le-cashflow-heading">
-              <header className="le-section-heading"><span className="le-section-index">02</span><div><h2 id="le-cashflow-heading">Monthly income & expenses</h2><p>Use recurring monthly amounts. Keep existing loan EMIs in the debt field below, not as household expenses.</p></div></header>
-              <div className="le-table-wrap">
-                <table className="le-table">
-                  <thead><tr><th>Type</th><th>Source</th><th>Monthly amount (₹)</th><th>Action</th></tr></thead>
-                  <tbody>
-                    {form.rows.map((row) => (
-                      <tr key={row.id}>
-                        <td><select id={`le-row-${row.id}-type`} aria-label={`Type for row ${row.id}`} value={row.type} onChange={(event) => updateRow(row.id, 'type', event.target.value)}><option>Income</option><option>Expense</option></select></td>
-                        <td className="le-row-source"><input id={`le-row-${row.id}-source`} aria-label={`Source for row ${row.id}`} value={row.source} onChange={(event) => updateRow(row.id, 'source', event.target.value)} maxLength={60} aria-invalid={Boolean(errors[`row-${row.id}-source`])} />{errors[`row-${row.id}-source`] && <small className="le-error">{errors[`row-${row.id}-source`]}</small>}</td>
-                        <td><input id={`le-row-${row.id}-amount`} aria-label={`${row.type} amount for row ${row.id}`} type="number" min="0" step="0.01" inputMode="decimal" value={row.amount} onChange={(event) => updateRow(row.id, 'amount', event.target.value)} aria-invalid={Boolean(errors[`row-${row.id}-amount`])} />{errors[`row-${row.id}-amount`] && <small className="le-error">{errors[`row-${row.id}-amount`]}</small>}</td>
-                        <td><button className="le-remove" type="button" onClick={() => removeRow(row.id)} aria-label={`Remove ${row.type.toLowerCase()} row ${row.id}`} title="Remove row"><Trash2 size={15} /></button></td>
+        <form onSubmit={submit} noValidate>
+          <fieldset className="eligibility-form-fields" disabled={saving}>
+            <div className="eligibility-layout">
+              <div className="eligibility-main">
+                <section className="form-panel">
+                  <h2>Applicant</h2>
+                  <div className="eligibility-fields applicant-fields">
+                    <label className="eligibility-field lead-id-field" htmlFor="eligibility-lead-id">
+                      <span>Lead ID *</span>
+                      <div className="lead-id-control">
+                        <input
+                          id="eligibility-lead-id"
+                          value={form.leadId}
+                          onChange={event => update('leadId', event.target.value)}
+                          required
+                          aria-invalid={Boolean(errors.leadId)}
+                          aria-describedby={errors.leadId ? 'eligibility-lead-id-error' : undefined}
+                        />
+                        <button
+                          className="lead-search-button"
+                          type="button"
+                          onClick={openLeadPicker}
+                          aria-label="Search leads"
+                          title="Search leads"
+                        >
+                          <Search size={17} />
+                        </button>
+                      </div>
+                      {errors.leadId && <small className="field-error" id="eligibility-lead-id-error">{errors.leadId}</small>}
+                    </label>
+                    <Field
+                      label="Name of the Applicant *"
+                      value={form.applicantName}
+                      onChange={value => update('applicantName', value)}
+                      error={errors.applicantName}
+                      required
+                      autoComplete="name"
+                    />
+                  </div>
+                </section>
+
+                <section className="form-panel">
+                  <h2>Loan details</h2>
+                  <div className="eligibility-fields loan-fields">
+                    <label className="eligibility-field" htmlFor="eligibility-product-name">
+                      <span>Loan Product *</span>
+                      <select
+                        id="eligibility-product-name"
+                        value={form.productName}
+                        onChange={event => update('productName', event.target.value)}
+                        required
+                        aria-invalid={Boolean(errors.productName)}
+                        aria-describedby={errors.productName ? 'eligibility-product-name-error' : undefined}
+                      >
+                        <option value="">Select product</option>
+                        {LOAN_PRODUCTS.map(product => <option key={product}>{product}</option>)}
+                      </select>
+                      {errors.productName && (
+                        <small className="field-error" id="eligibility-product-name-error">
+                          {errors.productName}
+                        </small>
+                      )}
+                    </label>
+                    <Field
+                      label="Loan Amount (Rs.) *"
+                      value={form.requestedAmount}
+                      onChange={value => update('requestedAmount', value)}
+                      error={errors.requestedAmount}
+                      inputMode="decimal"
+                      required
+                    />
+                    <Field
+                      label="Application Int. Rate (%) *"
+                      value={form.annualInterestRate}
+                      onChange={value => update('annualInterestRate', value)}
+                      error={errors.annualInterestRate}
+                      inputMode="decimal"
+                      required
+                    />
+                    <Field
+                      label="Tenure (months) *"
+                      value={form.tenureMonths}
+                      onChange={value => update('tenureMonths', value)}
+                      error={errors.tenureMonths}
+                      inputMode="numeric"
+                      required
+                    />
+                    <Field
+                      label="Security Value (Rs.)"
+                      value={form.securityValue}
+                      onChange={value => update('securityValue', value)}
+                      error={errors.securityValue}
+                      inputMode="decimal"
+                    />
+                    <Field
+                      label="Existing Monthly Debt (Rs.) *"
+                      value={form.existingMonthlyDebt}
+                      onChange={value => update('existingMonthlyDebt', value)}
+                      error={errors.existingMonthlyDebt}
+                      inputMode="decimal"
+                      required
+                      helpText="Enter total monthly repayments for existing loans. Keep 0 only if you have no existing debt."
+                    />
+                  </div>
+                </section>
+
+                <section className="form-panel income-panel">
+                  <div className="panel-heading">
+                    <h2>Income and expenses</h2>
+                    <button
+                      className="add-row"
+                      type="button"
+                      onClick={addRow}
+                      disabled={form.rows.length >= MAX_FINANCIAL_ROWS}
+                    >
+                      <CirclePlus size={15} /> Add entry
+                    </button>
+                  </div>
+                  <p className="table-help">
+                    Add up to {MAX_FINANCIAL_ROWS} income or expense entries. Complete the required source and amount fields.
+                    <span className="row-count">
+                      {form.rows.length >= MAX_FINANCIAL_ROWS
+                        ? `Maximum ${MAX_FINANCIAL_ROWS} reached`
+                        : `${form.rows.length}/${MAX_FINANCIAL_ROWS} entries`}
+                    </span>
+                  </p>
+                  <div className="table-scroll">
+                    <table className="eligibility-table income-table">
+                      <thead>
+                        <tr>
+                          <th>Type</th>
+                          <th>Income / Expense Source</th>
+                          <th>Income Amount (Rs.)</th>
+                          <th>Expense Amount (Rs.)</th>
+                          <th aria-label="Actions" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {form.rows.map(row => (
+                          <tr key={row.id}>
+                            <td>
+                              <select
+                                aria-label={`Type for row ${row.id}`}
+                                value={row.type}
+                                onChange={event => updateRow(row.id, 'type', event.target.value)}
+                                required
+                                aria-invalid={Boolean(errors[`row-${row.id}-type`])}
+                              >
+                                <option>Income</option>
+                                <option>Expense</option>
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                id={`row-${row.id}-source`}
+                                aria-label={`${row.type} source for row ${row.id}`}
+                                value={row.source}
+                                onChange={event => updateRow(row.id, 'source', event.target.value)}
+                                required
+                                placeholder={row.type === 'Income' ? 'e.g. Salary' : 'e.g. Rent'}
+                                aria-invalid={Boolean(errors[`row-${row.id}-source`])}
+                                aria-describedby={errors[`row-${row.id}-source`] ? `row-${row.id}-source-error` : undefined}
+                              />
+                              {errors[`row-${row.id}-source`] && (
+                                <small className="table-field-error" id={`row-${row.id}-source-error`}>
+                                  {errors[`row-${row.id}-source`]}
+                                </small>
+                              )}
+                            </td>
+                            <td>
+                              {row.type === 'Income' && (
+                                <>
+                                  <input
+                                    id={`row-${row.id}-amount`}
+                                    aria-label={`Income amount for row ${row.id}`}
+                                    value={row.amount}
+                                    onChange={event => updateRow(row.id, 'amount', event.target.value)}
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="any"
+                                    required
+                                    aria-invalid={Boolean(errors[`row-${row.id}-amount`])}
+                                    aria-describedby={errors[`row-${row.id}-amount`] ? `row-${row.id}-amount-error` : undefined}
+                                  />
+                                  {errors[`row-${row.id}-amount`] && (
+                                    <small className="table-field-error" id={`row-${row.id}-amount-error`}>
+                                      {errors[`row-${row.id}-amount`]}
+                                    </small>
+                                  )}
+                                </>
+                              )}
+                            </td>
+                            <td>
+                              {row.type === 'Expense' && (
+                                <>
+                                  <input
+                                    id={`row-${row.id}-amount`}
+                                    aria-label={`Expense amount for row ${row.id}`}
+                                    value={row.amount}
+                                    onChange={event => updateRow(row.id, 'amount', event.target.value)}
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="any"
+                                    required
+                                    aria-invalid={Boolean(errors[`row-${row.id}-amount`])}
+                                    aria-describedby={errors[`row-${row.id}-amount`] ? `row-${row.id}-amount-error` : undefined}
+                                  />
+                                  {errors[`row-${row.id}-amount`] && (
+                                    <small className="table-field-error" id={`row-${row.id}-amount-error`}>
+                                      {errors[`row-${row.id}-amount`]}
+                                    </small>
+                                  )}
+                                </>
+                              )}
+                            </td>
+                            <td>
+                              <button
+                                className="row-remove"
+                                type="button"
+                                aria-label={`Remove row ${row.id}`}
+                                onClick={() => removeRow(row.id)}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="total-row">
+                          <td colSpan="2">Total</td>
+                          <td>{money(totals.Income)}</td>
+                          <td>{money(totals.Expense)}</td>
+                          <td />
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  {errors.income && <small className="field-error">{errors.income}</small>}
+                </section>
+              </div>
+
+              <aside className="assessment-panel">
+                <h2>Assessment</h2>
+                <div className={`eligibility-results ${assessment ? 'calculated' : 'pending'}`}>
+                  <ResultField
+                    label="Indicative eligible amount (Rs.)"
+                    value={assessment ? money(assessment.eligibleAmount) : 'Pending'}
+                  />
+                  <ResultField label="Interest (%)" value={assessment ? `${form.annualInterestRate}%` : 'Pending'} />
+                  <ResultField label="Tenure (mo)" value={assessment ? form.tenureMonths : 'Pending'} />
+                  <ResultField
+                    label="EMI (Rs.)"
+                    value={assessment ? money(assessment.eligibleEmi) : 'Pending'}
+                  />
+                </div>
+                <p className={`assessment-state ${assessment ? 'calculated' : ''}`} role="status">
+                  {assessment ? 'Values calculated from the submitted details.' : 'Results are pending assessment.'}
+                </p>
+
+                <div className="table-scroll ratio-scroll">
+                  <table className="eligibility-table ratio-table">
+                    <thead>
+                      <tr><th>Financial ratio</th><th>Result</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <th scope="row" title="Fixed Obligation to Income Ratio: existing monthly debt plus proposed EMI divided by monthly income after regular expenses.">
+                          FOIR <span className="ratio-description">Debt + proposed EMI ÷ net income</span>
+                        </th>
+                        <td>{assessment ? percent(assessment.foir) : 'Pending'}</td>
+                        <td>{assessment ? actionFor(assessment.foir, POLICY.reviewFoir, POLICY.maxFoir) : 'Pending'}</td>
                       </tr>
-                    ))}
-                    <tr className="le-total-row"><th scope="row">Totals</th><td></td><td>Income ₹{money(totalIncome)}<br />Expenses ₹{money(totalExpense)}</td><td></td></tr>
+                      <tr>
+                        <th scope="row" title="Debt-to-Income Ratio: existing monthly debt plus proposed EMI divided by gross monthly income.">
+                          DTI <span className="ratio-description">Debt + proposed EMI ÷ gross income</span>
+                        </th>
+                        <td>{assessment ? percent(assessment.dti) : 'Pending'}</td>
+                        <td>{assessment ? actionFor(assessment.dti, POLICY.reviewFoir, POLICY.maxFoir) : 'Pending'}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row" title="Loan-to-Value Ratio: requested loan amount divided by the value of the security offered.">
+                          LTV <span className="ratio-description">Requested loan ÷ security value</span>
+                        </th>
+                        <td>{assessment ? percent(assessment.ltv) : 'Pending'}</td>
+                        <td>{assessment ? assessment.ltv === null ? 'Optional' : ltvAction : 'Pending'}</td>
+                      </tr>
+                      <tr>
+                        <th scope="row" title={`CIBIL score used for screening; ${POLICY.cibilFloor} is the indicative screening floor.`}>
+                          CIBIL Score <span className="ratio-description">Screening floor {POLICY.cibilFloor}</span>
+                        </th>
+                        <td>
+                          <input
+                            className="score-input"
+                            aria-label="CIBIL score"
+                            value={form.cibilScore}
+                            onChange={event => update('cibilScore', event.target.value)}
+                            type="number"
+                            inputMode="numeric"
+                            step="any"
+                            required
+                            aria-invalid={Boolean(errors.cibilScore)}
+                            aria-describedby={errors.cibilScore ? 'eligibility-cibil-score-error' : undefined}
+                          />
+                        </td>
+                        <td>{cibilAction}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {errors.cibilScore && (
+                  <small className="field-error" id="eligibility-cibil-score-error">
+                    {errors.cibilScore}
+                  </small>
+                )}
+
+                <div className="eligibility-actions">
+                  <button className="primary-button" type="submit" disabled={saving}>
+                    {saving ? 'Checking eligibility…' : 'Check Eligibility'}
+                  </button>
+                  <button className="secondary-button" type="button" onClick={reset}>
+                    <RotateCcw size={15} /> Cancel
+                  </button>
+                  {assessment?.isEligible && (
+                    <button className="continue-button" type="button" onClick={saveAndContinue}>
+                      Save &amp; Continue
+                    </button>
+                  )}
+                </div>
+              </aside>
+            </div>
+
+            {assessment && (
+              <div className={`assessment-result ${
+                assessment.isEligible
+                  ? 'eligible'
+                  : assessment.decision === 'Refer for Review'
+                    ? 'review'
+                    : 'not-eligible'
+              }`} role="status">
+                <strong>{assessment.decision}</strong>
+                {assessment.reasons.length > 0 && (
+                  <ul>{assessment.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+                )}
+                {!assessment.reasons.length && (
+                  <p className="assessment-note">
+                    INDICATIVE ONLY — FINAL APPROVAL SUBJECT TO VERIFICATION.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {formError && <p className="form-error" role="alert">{formError}</p>}
+
+            {assessment?.isEligible && assessment.cibilScore >= POLICY.cibilFloor && (
+              <details className="approval-letter">
+                <summary>View in-principle approval letter</summary>
+                <p className="letter-disclaimer">Draft only: this indicative estimate is not a loan sanction or a bank-issued approval.</p>
+                <pre>{approvalLetter(form, assessment)}</pre>
+              </details>
+            )}
+          </fieldset>
+        </form>
+
+        {leadPickerOpen && (
+          <div
+            className="lead-picker-overlay"
+            role="presentation"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) setLeadPickerOpen(false);
+            }}
+          >
+            <section
+              className="lead-picker-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="lead-picker-title"
+              onKeyDown={event => {
+                if (event.key === 'Escape') setLeadPickerOpen(false);
+              }}
+            >
+              <header className="lead-picker-header">
+                <div>
+                  <h2 id="lead-picker-title">Select a lead</h2>
+                  <p>Search backend leads by lead ID or applicant name.</p>
+                </div>
+                <button
+                  className="lead-picker-close"
+                  type="button"
+                  onClick={() => setLeadPickerOpen(false)}
+                  aria-label="Close lead search"
+                >
+                  <X size={18} />
+                </button>
+              </header>
+              <label className="lead-picker-search" htmlFor="lead-picker-search">
+                <Search size={17} aria-hidden="true" />
+                <input
+                  id="lead-picker-search"
+                  type="search"
+                  value={leadSearch}
+                  onChange={event => setLeadSearch(event.target.value)}
+                  placeholder="Search by lead ID or applicant name"
+                  autoComplete="off"
+                  autoFocus
+                />
+              </label>
+              {leadPickerError && <p className="lead-picker-error" role="alert">{leadPickerError}</p>}
+              <div className="lead-picker-table-wrap">
+                <table className="lead-picker-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Lead ID</th>
+                      <th scope="col">Applicant</th>
+                      <th scope="col">Loan product</th>
+                      <th scope="col">Loan amount (Rs.)</th>
+                      <th scope="col" aria-label="Action" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {leadsLoading ? (
+                      <tr><td className="lead-picker-empty" colSpan="5">Loading leads from the backend...</td></tr>
+                    ) : leadPickerError ? (
+                      <tr><td className="lead-picker-empty" colSpan="5">Leads could not be loaded.</td></tr>
+                    ) : filteredLeads.length ? (
+                      filteredLeads.map((lead, index) => {
+                        const leadId = getLeadId(lead);
+                        return (
+                          <tr key={leadId || index}>
+                            <td className="lead-picker-id">{leadId || '—'}</td>
+                            <td>{getLeadName(lead) || '—'}</td>
+                            <td>{getLeadProduct(lead) || leadValue(lead, 'loanProductType', 'loan_product_type', 'product', 'productName', 'product_name') || '—'}</td>
+                            <td>{leadValue(lead, 'loanAmount', 'loan_amount', 'requestedAmount', 'requested_amount', 'amount') || '—'}</td>
+                            <td>
+                              <button
+                                className="lead-picker-select"
+                                type="button"
+                                onClick={() => selectLead(lead)}
+                                disabled={!leadId}
+                              >
+                                Select
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td className="lead-picker-empty" colSpan="5">
+                          {leads.length ? 'No leads match your search.' : 'No leads are available.'}
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
-              {errors.income && <p className="le-error le-inline-error" role="alert">{errors.income}</p>}
-              {Object.keys(errors).some((key) => key.endsWith('-amount')) && <p className="le-error le-inline-error" role="alert">Check each monthly amount; use a non-negative value with up to two decimal places.</p>}
-              <button className="le-add" type="button" onClick={addRow}><CirclePlus size={15} /> Add income or expense</button>
             </section>
-
-            <section className="le-section" aria-labelledby="le-obligations-heading">
-              <header className="le-section-heading"><span className="le-section-index">03</span><div><h2 id="le-obligations-heading">Obligations & collateral</h2><p>Include current EMIs and credit repayments; add collateral data for secured lending.</p></div></header>
-              <div className="le-form-fields">
-                <label className="le-field" htmlFor="le-monthlyDebtService">Existing monthly debt payments (₹) *<input id="le-monthlyDebtService" type="number" min="0" step="0.01" inputMode="decimal" value={form.monthlyDebtService} onChange={(event) => update('monthlyDebtService', event.target.value)} aria-invalid={Boolean(errors.monthlyDebtService)} />{errors.monthlyDebtService && <small className="le-error">{errors.monthlyDebtService}</small>}</label>
-                <label className="le-field" htmlFor="le-cibilScore">CIBIL score (300–900) *<input id="le-cibilScore" type="number" min="300" max="900" step="1" value={form.cibilScore} onChange={(event) => update('cibilScore', event.target.value)} aria-invalid={Boolean(errors.cibilScore)} />{errors.cibilScore ? <small className="le-error">{errors.cibilScore}</small> : <small className="le-score-hint">Current entered range: {cibilBand}</small>}</label>
-                <label className="le-field" htmlFor="le-collateralValue">{form.loanType === 'Home loan' ? 'Property market value (₹) *' : 'Collateral value (₹, optional)'}<input id="le-collateralValue" type="number" min="0" step="1000" inputMode="decimal" value={form.collateralValue} onChange={(event) => update('collateralValue', event.target.value)} aria-invalid={Boolean(errors.collateralValue)} />{errors.collateralValue && <small className="le-error">{errors.collateralValue}</small>}</label>
-              </div>
-            </section>
-
-            <footer className="le-form-actions">
-              <button className="le-btn" type="button" onClick={reset}><RotateCcw size={15} /> Reset</button>
-              <button className="le-btn le-submit" type="submit" disabled={saving}>{saving ? <LoaderCircle className="le-spin" size={15} /> : <ClipboardCheck size={15} />}{saving ? 'Assessing...' : 'Run assessment'}</button>
-            </footer>
-          </form>
-
-          <aside className="le-results-panel" aria-label="Live eligibility estimate">
-            <header className="le-results-head"><span className="le-results-kicker">Live estimate</span><h2>Affordability summary</h2></header>
-            <div className={`le-decision-banner ${decisionTone}`} role="status">
-              {decisionTone ? <AlertTriangle size={17} /> : <ClipboardCheck size={17} />}
-              <div><strong>{decision || 'Indicative estimate'}</strong><span>{decision ? 'Based on entered data and screening rules shown below.' : 'Complete the form and run assessment for a screening result.'}</span></div>
-            </div>
-            <div className="le-emi-block"><span className="le-emi-label">Estimated monthly EMI</span><strong className="le-emi-value">₹{money(proposedEmi)}</strong><p className="le-emi-footnote">Principal ₹{money(requestedAmount)} · {form.annualInterestRate || 0}% p.a. · {tenureMonths || 0} months</p></div>
-            <div className="le-metric-grid" aria-label="Calculated financial ratios">
-              <div className="le-metric-card"><span>DTI · gross income</span><strong>{dti}</strong><small>Total debt payments ÷ gross monthly income</small></div>
-              <div className="le-metric-card"><span>FOIR · take-home</span><strong>{foir}</strong><small>Total EMIs ÷ income after listed expenses</small></div>
-              <div className="le-metric-card"><span>LTV</span><strong>{ltv}</strong><small>{form.loanType === 'Home loan' ? `RBI benchmark cap: ${homeLtvLimit}%` : 'Loan amount ÷ collateral value'}</small></div>
-              <div className="le-metric-card"><span>DSCR estimate</span><strong>{dscr}</strong><small>Monthly net income ÷ total debt service</small></div>
-              <div className="le-metric-card"><span>Net disposable ratio</span><strong>{ndir}</strong><small>Available after expenses and EMIs ÷ gross income</small></div>
-              <div className="le-metric-card"><span>CIBIL score</span><strong>{form.cibilScore || '—'}</strong><small>{cibilBand}</small></div>
-            </div>
-            <div className="le-capacity">
-              <div className="le-capacity-item"><span>Estimated max loan at 50% FOIR</span><strong>{totalIncome > 0 && tenureMonths > 0 ? `₹${money(maxAffordableLoan)}` : '—'}</strong></div>
-              <div className="le-capacity-item"><span>Monthly balance after proposed EMI</span><strong>{totalIncome > 0 ? `₹${money(monthlySurplus)}` : '—'}</strong></div>
-            </div>
-            <ul className="le-review-list" aria-label="Screening considerations">
-              {decision ? [...screeningFlags, ...reviewFlags].length ? [...screeningFlags, ...reviewFlags].map((flag) => <li key={flag}><AlertTriangle size={13} />{flag}</li>) : <li><Check size={13} />No screening flags from the entered information.</li> : <li><AlertTriangle size={13} />Submit the completed inputs to run the screening checks.</li>}
-            </ul>
-            <details className="le-guidance">
-              <summary>Formula & screening references</summary>
-              <div className="le-guidance-content">
-                <p><strong>EMI:</strong> reducing-balance payment based on requested principal, annual rate and tenure.</p>
-                <p><strong>DTI:</strong> (existing monthly debt + proposed EMI) ÷ gross monthly income × 100.</p>
-                <p><strong>FOIR:</strong> total monthly EMIs ÷ income remaining after listed expenses × 100. The 40% review and 50% ceiling are indicative lender-screening assumptions.</p>
-                <p><strong>Home-loan LTV:</strong> requested loan ÷ property value. RBI benchmark ceilings are 90% up to ₹30 lakh, 80% above ₹30 lakh to ₹75 lakh, and 75% above ₹75 lakh.</p>
-                <p><strong>DSCR / net disposable:</strong> monthly net income ÷ debt service; and (net income − debt service) ÷ gross income × 100.</p>
-                <p><strong>Credit score:</strong> 750+ is treated as a preferred screening range and below 650 as a review flag, not an RBI-mandated cutoff.</p>
-              </div>
-            </details>
-            <p className="le-disclaimer">This calculator is a preliminary estimate, not an approval, offer, or credit decision. RBI LTV limits apply to housing finance; lender rules, verified income, obligations, property valuation and applicable regulations determine the final result.</p>
-          </aside>
-        </div>
-      </main>
+          </div>
+        )}
+      </div>
     </AppShell>
   );
 }
+
+function Field({
+  label,
+  value,
+  onChange,
+  error,
+  inputMode,
+  required = false,
+  autoComplete = 'off',
+  helpText
+}) {
+  const id = `eligibility-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  const errorId = `${id}-error`;
+  const describedBy = [
+    helpText ? `${id}-help` : null,
+    error ? errorId : null
+  ].filter(Boolean).join(' ') || undefined;
+  return (
+    <label className="eligibility-field" htmlFor={id}>
+      <span>{label}</span>
+      <input
+        id={id}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        type={inputMode ? 'number' : 'text'}
+        inputMode={inputMode || 'text'}
+        step={inputMode ? 'any' : undefined}
+        required={required}
+        aria-invalid={Boolean(error)}
+        aria-describedby={describedBy}
+        autoComplete={autoComplete}
+      />
+      {helpText && <small className="field-help" id={`${id}-help`}>{helpText}</small>}
+      {error && <small className="field-error" id={errorId}>{error}</small>}
+    </label>
+  );
+}
+
+function ResultField({ label, value }) {
+  return (
+    <div className="result-field">
+      <span>{label}</span>
+      <output>{value}</output>
+    </div>
+  );
+}
+
+const styles = `
+.los-page-wrap:has(> .eligibility-page){display:flex;align-items:flex-start;justify-content:center;width:100%;max-width:none;margin:0 auto;box-sizing:border-box}
+.eligibility-page{width:100%;max-width:1480px;min-width:0;margin:0 auto;padding:24px 32px 40px;border-radius:14px;background:#f3f8f6;color:#202b36}
+.eligibility-heading{display:flex;min-height:30px;align-items:center;justify-content:space-between;gap:16px;margin:0 0 10px}
+.eligibility-title{margin:0;color:#17212b;font-size:24px;font-weight:700;letter-spacing:-.02em}
+.eligibility-status{display:block;max-width:190px;overflow:hidden;padding:5px 11px;border:1px solid #e5e9ed;border-radius:999px;background:#f7f8fa;color:#606a73;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.eligibility-status.checked{border-color:#aadbb1;background:#edf8ef;color:#26703a;font-weight:600}
+.eligibility-status.pending{border-color:#d6dde4;background:#f4f7fa;color:#576675}
+.eligibility-status.review{border-color:#e7d19c;background:#fff8e8;color:#805c12;font-weight:600}
+.eligibility-status.rejected{border-color:#efc4c4;background:#fff3f3;color:#9a3434;font-weight:600}
+.eligibility-form-fields{min-width:0;margin:0;padding:0;border:0}
+.eligibility-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(330px,.95fr);gap:18px;align-items:start}
+.eligibility-main{display:grid;gap:9px;min-width:0}
+.form-panel,.assessment-panel{min-width:0;padding:16px;border:1px solid #dce8e3;border-radius:12px;background:#fff;box-shadow:0 4px 16px #173a2d0b}
+.assessment-panel{position:sticky;top:16px}
+.form-panel h2,.assessment-panel h2{margin:0;color:#173c36;font-size:16px;font-weight:700}
+.eligibility-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start}
+.applicant-fields{grid-template-columns:minmax(150px,.62fr) minmax(0,1.38fr)}
+.eligibility-field{display:grid;gap:5px;min-width:0;color:#53645f;font-size:12px;font-weight:500;line-height:1.35}
+.form-panel h2+.eligibility-fields{margin-top:12px}
+.eligibility-field input,.eligibility-field select,.result-field input{width:100%;height:40px;min-width:0;padding:0 10px;border:1px solid #cbd9d4;border-radius:7px;background:#fff;color:#20262c;font:14px Arial,sans-serif}
+.eligibility-field input:focus,.eligibility-field select:focus,.score-input:focus,.result-field input:focus{outline:3px solid #168b6324;border-color:#168b63}
+.eligibility-field input[aria-invalid=true],.eligibility-field select[aria-invalid=true],.score-input[aria-invalid=true],.result-field input[aria-invalid=true]{border-color:#bd4d4d;background:#fffafa}
+.field-help{color:#747d84;font-size:10px;font-weight:400;line-height:1.35}
+.lead-id-field{max-width:270px}
+.lead-id-control{display:flex;align-items:center;gap:6px;min-width:0}
+.lead-id-control input{flex:1;width:0}
+.lead-search-button{display:grid;flex:0 0 40px;width:40px;height:40px;place-items:center;border:1px solid #b9d6cb;border-radius:7px;background:#f4faf7;color:#28705e;cursor:pointer}
+.lead-search-button:hover{border-color:#168b63;background:#eaf6ef;color:#11634e}
+.lead-picker-overlay{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:20px;background:#102d35a6}
+.lead-picker-dialog{display:flex;flex-direction:column;width:min(820px,100%);max-height:88vh;overflow:hidden;border:1px solid #dce8e3;border-radius:10px;background:#fff;box-shadow:0 24px 70px #0d262d40}
+.lead-picker-header{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:17px 20px;border-bottom:1px solid #e5ecea;background:#f8fbfa}
+.lead-picker-header h2{margin:0;color:#1c4847;font-size:18px}
+.lead-picker-header p{margin:4px 0 0;color:#718486;font-size:12px}
+.lead-picker-close{display:grid;flex:0 0 34px;width:34px;height:34px;place-items:center;border:1px solid #dce6e3;border-radius:5px;background:#fff;color:#526a6c;cursor:pointer}
+.lead-picker-close:hover{background:#eef5f3}
+.lead-picker-search{display:flex;align-items:center;gap:9px;height:40px;margin:16px 18px 10px;padding:0 11px;border:1px solid #cbd9d7;border-radius:6px;color:#718486}
+.lead-picker-search:focus-within{border-color:#568e88;box-shadow:0 0 0 3px #177e7a19}
+.lead-picker-search input{width:100%;height:100%;border:0;outline:0;background:transparent;color:#203c42;font:12px Arial,sans-serif}
+.lead-picker-table-wrap{flex:1;min-height:0;max-width:100%;margin:0 18px 18px;overflow:auto;border:1px solid #e1e9e6;border-radius:5px}
+.lead-picker-table{width:100%;min-width:680px;border-collapse:collapse;table-layout:auto}
+.lead-picker-table th,.lead-picker-table td{height:45px;padding:8px 11px;border-bottom:1px solid #edf1f0;text-align:left;color:#354d4f;font-size:12px}
+.lead-picker-table th{position:sticky;top:0;background:#f5f8f7;color:#607577;font-size:10px;font-weight:700;text-transform:uppercase}
+.lead-picker-table tbody tr:hover{background:#fbfdfc}
+.lead-picker-table tbody tr:last-child td{border-bottom:0}
+.lead-picker-id{color:#176e67!important;font-weight:750}
+.lead-picker-select{min-height:30px;padding:0 11px;border:1px solid #177e7a;border-radius:5px;background:#177e7a;color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+.lead-picker-select:hover{background:#0c6662}
+.lead-picker-select:disabled{opacity:.5;cursor:not-allowed}
+.lead-picker-empty{height:90px!important;text-align:center!important;color:#718284!important}
+.lead-picker-error{margin:0 18px 10px;padding:9px 11px;border:1px solid #e7cccc;border-radius:5px;background:#fff7f7;color:#a43838;font-size:12px}
+.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.table-help{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 10px;color:#687a74;font-size:11px;line-height:1.45}
+.row-count{flex:none;color:#168b73;font-size:10px;font-weight:700}
+.add-row{display:inline-flex;min-height:34px;align-items:center;gap:6px;padding:5px 11px;border:1px solid #b9d6cb;border-radius:7px;background:#f6fbf8;color:#23604d;font-size:12px;font-weight:600;cursor:pointer}
+.add-row:hover{border-color:#168b63;background:#edf8f2}
+.add-row:disabled{opacity:.5;cursor:not-allowed}
+.table-scroll{overflow-x:auto;border-radius:6px}
+.eligibility-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+.eligibility-table th,.eligibility-table td{height:40px;padding:5px 6px;border-bottom:1px solid #e5ece8;text-align:center;vertical-align:middle}
+.eligibility-table thead th{position:sticky;top:0;z-index:1;height:32px;background:#f5f9f7;color:#52675f;font-size:10px;font-weight:600}
+.eligibility-table tbody th{color:#414950}
+.eligibility-table td input,.eligibility-table td select{width:100%;height:34px;min-width:0;padding:0 7px;border:1px solid #d3dfda;border-radius:6px;background:#fff;color:#242b30;font-size:12px}
+.table-field-error{display:block;margin-top:3px;color:#a52e2e;font-size:9px;font-weight:400;text-align:left}
+.income-table{min-width:600px}
+.income-table th:first-child{width:12%}.income-table th:nth-child(2){width:24%}.income-table th:nth-child(3),.income-table th:nth-child(4){width:26%}.income-table th:last-child{width:12%}
+.income-table tbody td:nth-child(2){text-align:left}
+.income-table .total-row{height:28px;font-weight:600}
+.total-row td{height:28px;border-bottom:0}
+.row-remove{display:inline-grid;width:23px;height:25px;place-items:center;border:0;border-radius:5px;background:transparent;color:#a34a4a;cursor:pointer}
+.row-remove:hover{background:#fff0f0}
+.assessment-panel h2{margin-bottom:8px}
+.eligibility-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 5px;padding:12px;border-radius:10px}
+.eligibility-results.pending{background:#f1f4f7}
+.eligibility-results.calculated{background:#dff2e1;box-shadow:inset 0 0 0 1px #b5dcb8}
+.result-field{display:grid;gap:3px;min-width:0;color:#4f6251;font-size:10px;font-weight:500}
+.result-field output,.result-field input{display:flex;align-items:center;justify-content:center;min-width:0;height:25px;padding:0 5px;border:0;border-radius:4px;background:transparent;color:#243b29;font:600 12px Arial,sans-serif;text-align:center}
+.eligibility-results .result-field:first-child{grid-column:1/-1;padding-bottom:5px;border-bottom:1px solid #a9d8a8}
+.eligibility-results .result-field:first-child output{justify-content:flex-start;font-size:14px}
+.eligibility-results .result-field input{height:25px;border:1px solid #b5d8b3;background:#fff}
+.ratio-scroll{margin-top:2px}
+.ratio-table th:first-child{width:46%}.ratio-table th:nth-child(2){width:28%}.ratio-table th:last-child{width:26%}
+.ratio-table thead th{height:24px}
+.ratio-table th[scope=row]{text-align:left;font-weight:500}
+.ratio-table td:last-child{color:#697178;font-size:9px}
+.ratio-description{display:block;margin-top:2px;color:#737b81;font-size:8px;font-weight:400;line-height:1.25}
+.assessment-state{margin:0 0 4px;color:#717b84;font-size:9px;line-height:1.3}
+.assessment-state.calculated{color:#26703a;font-weight:600}
+.score-input{text-align:center}
+.assessment-panel>.field-error{margin:2px 0 4px}
+.eligibility-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}
+.primary-button,.secondary-button,.continue-button{display:inline-flex;min-width:0;min-height:38px;align-items:center;justify-content:center;gap:6px;padding:6px 8px;border:1px solid #d2d5d7;border-radius:7px;background:#fff;color:#30383e;font-size:11px;font-weight:600;line-height:1.25;text-align:center;cursor:pointer}
+.primary-button{border-color:#168b63;background:#168b63;color:#fff}
+.primary-button:hover{background:#117451}
+.continue-button{grid-column:1/-1;border-color:#287344;background:#287344;color:#fff}
+.continue-button:hover{background:#1e5d36}
+.secondary-button:hover{border-color:#aeb5ba;background:#f7f8f8}
+.primary-button:disabled{opacity:.65;cursor:wait}
+.assessment-result{margin:10px 0;padding:12px 14px;border:1px solid #add5b2;border-radius:8px;background:#f2faf2;color:#315b2d;font-size:13px;line-height:1.5}
+.assessment-result.eligible{border-color:#add5b2;background:#f2faf2;color:#315b2d}
+.assessment-result.review{border-color:#e7d19c;background:#fff9ed;color:#79570f}
+.assessment-result p{margin:6px 0 0}
+.assessment-note{font-size:11px;font-weight:700;letter-spacing:.025em}
+.assessment-result ul{margin:7px 0 0;padding-left:20px}
+.assessment-result.not-eligible{border-color:#e3bcbc;background:#fff6f6;color:#8f3030}
+.approval-letter{margin-top:12px;border:1px solid #d5dce1;border-radius:7px;padding:11px 13px;font-size:12px}
+.approval-letter summary{cursor:pointer;font-weight:700}
+.letter-disclaimer{color:#8f3030;font-size:11px}
+.approval-letter pre{overflow:auto;white-space:pre-wrap;font:12px/1.6 Arial,sans-serif}
+.field-error{display:block;color:#a52e2e;font-size:10px;font-weight:400;line-height:1.4}
+.form-error{margin:10px 0;padding:10px 12px;border:1px solid #e3bcbc;border-radius:7px;background:#fff6f6;color:#8f3030;font-size:12px}
+@media(max-width:960px){.eligibility-layout{grid-template-columns:minmax(0,1fr)}.assessment-panel{position:static}.eligibility-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.eligibility-page{padding:14px;border-radius:0}.eligibility-layout{grid-template-columns:minmax(0,1fr)}.eligibility-heading{margin-bottom:10px}.eligibility-title{font-size:20px}.form-panel,.assessment-panel{padding:12px}.eligibility-fields,.applicant-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.lead-id-field{max-width:none}.table-help{align-items:flex-start;flex-direction:column;gap:4px}.lead-picker-overlay{padding:10px}.lead-picker-header{padding:14px}.lead-picker-table-wrap{margin:0 12px 12px}.lead-picker-search{margin:12px 12px 8px}}
+@media(max-width:360px){.eligibility-fields,.applicant-fields{grid-template-columns:1fr}}
+`;

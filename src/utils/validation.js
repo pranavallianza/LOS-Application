@@ -19,7 +19,7 @@ const inputMaxLengths = {
   middleName: 50,
   lastName: 50,
   userName: 30,
-  password: 128,
+  password: 16,
   email: 254,
   idleTimeout: 5,
   badLogins: 2,
@@ -135,29 +135,17 @@ export function isValidEmail(email) {
 
 /**
  * Validates password complexity:
- * - At least 8 characters
- * - At most 128 characters
- * - At least 3 of 4 character groups
+ * - 8 to 16 characters
+ * - At least one uppercase letter, lowercase letter, number, and allowed special character
  */
 export function validatePasswordStrength(password) {
   if (!password) return 'Password is required.';
   if (password.length < 8) return 'Password must contain at least 8 characters.';
-  if (password.length > 128) return 'Password must not exceed 128 characters.';
-
-  const groups = [
-    { label: 'uppercase letters', pattern: /[A-Z]/ },
-    { label: 'lowercase letters', pattern: /[a-z]/ },
-    { label: 'numbers', pattern: /[0-9]/ },
-    { label: 'special characters', pattern: /[^A-Za-z0-9\s]/ },
-  ];
-  const includedGroups = groups.filter(({ pattern }) => pattern.test(password));
-
-  if (includedGroups.length < 3) {
-    const missingGroups = groups
-      .filter(({ pattern }) => !pattern.test(password))
-      .map(({ label }) => label);
-    return `Password must include at least 3 of these 4 groups: uppercase letters, lowercase letters, numbers, and special characters. Add at least one of: ${missingGroups.join(', ')}.`;
-  }
+  if (password.length > 16) return 'Password must not exceed 16 characters.';
+  if (!/[A-Z]/.test(password)) return 'Password must include at least one uppercase letter (A-Z).';
+  if (!/[a-z]/.test(password)) return 'Password must include at least one lowercase letter (a-z).';
+  if (!/[0-9]/.test(password)) return 'Password must include at least one number (0-9).';
+  if (!/[@#$%&*]/.test(password)) return 'Password must include at least one special character (@, #, $, %, &, or *).';
 
   return '';
 }

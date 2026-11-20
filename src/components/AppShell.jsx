@@ -17,37 +17,15 @@ import { getUserProfile } from '../services/user_profile';
 import { LOGOUT_PENDING_KEY, logout } from '../services/login';
 import './shell.css';
 
-const SIDEBAR_STORAGE_KEY = 'los-sidebar-collapsed';
-
 export default function AppShell({ children, title }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarPreferenceLoaded, setSidebarPreferenceLoaded] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [authData, setAuthData] = useState(null);
   const [profile, setProfile] = useState(null);
   const [accessReady, setAccessReady] = useState(false);
   const [accessError, setAccessError] = useState('');
   const pathname = usePathname() || '';
-
-  useEffect(() => {
-    try {
-      setSidebarCollapsed(window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true');
-    } catch (error) {
-      console.error('Unable to load the saved sidebar preference.', error);
-    } finally {
-      setSidebarPreferenceLoaded(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!sidebarPreferenceLoaded) return;
-    try {
-      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarCollapsed));
-    } catch (error) {
-      console.error('Unable to save the sidebar preference.', error);
-    }
-  }, [sidebarCollapsed, sidebarPreferenceLoaded]);
 
   useEffect(() => {
     const redirectIfLoggedOut = () => {
@@ -178,7 +156,11 @@ export default function AppShell({ children, title }) {
           onLogout={handleLogout}
         />
         <div className="los-workspace">
-          <Header menuOpen={sidebarOpen} onMenu={() => setSidebarOpen((open) => !open)} />
+          <Header
+            menuOpen={sidebarOpen}
+            onMenu={() => setSidebarOpen((open) => !open)}
+            role={currentRole}
+          />
           <main className="main-content los-main-content">
             <div className="page-wrap los-page-wrap">
               {!accessReady ? (
