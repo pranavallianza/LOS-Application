@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import Calendar from 'react-calendar';
@@ -55,27 +56,133 @@ export default function LeadDatePicker({
   invalid = false,
   emptyLabel = 'Select date',
   triggerStyle,
+  popupPlacement = 'below',
 }) {
   const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [popupPosition, setPopupPosition] = useState(null);
   const selectedDate = toCalendarDate(value);
 
   useEffect(() => {
     if (!isOpen) return undefined;
 
     const handleOutsidePointerDown = (event) => {
-      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+      if (
+        !containerRef.current?.contains(event.target)
+        && !popoverRef.current?.contains(event.target)
+      ) {
+        setIsOpen(false);
+      }
     };
 
     document.addEventListener('pointerdown', handleOutsidePointerDown);
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || popupPlacement !== 'side') {
+      setPopupPosition(null);
+      return undefined;
+    }
+
+    const updatePopupPosition = () => {
+      const trigger = triggerRef.current;
+      const popover = popoverRef.current;
+      if (!trigger || !popover) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const popoverRect = popover.getBoundingClientRect();
+      const margin = 12;
+      const gap = 8;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const rightFits = triggerRect.right + gap + popoverRect.width <= viewportWidth - margin;
+      const leftFits = triggerRect.left - gap - popoverRect.width >= margin;
+
+      let left;
+      let top;
+      if (rightFits) {
+        left = triggerRect.right + gap;
+        top = Math.min(
+          Math.max(triggerRect.top, margin),
+          Math.max(margin, viewportHeight - popoverRect.height - margin),
+        );
+      } else if (leftFits) {
+        left = triggerRect.left - gap - popoverRect.width;
+        top = Math.min(
+          Math.max(triggerRect.top, margin),
+          Math.max(margin, viewportHeight - popoverRect.height - margin),
+        );
+      } else {
+        const belowFits = triggerRect.bottom + gap + popoverRect.height <= viewportHeight - margin;
+        left = Math.min(
+          Math.max(triggerRect.left, margin),
+          Math.max(margin, viewportWidth - popoverRect.width - margin),
+        );
+        if (belowFits) {
+          top = triggerRect.bottom + gap;
+        } else if (triggerRect.top - gap - popoverRect.height >= margin) {
+          top = triggerRect.top - gap - popoverRect.height;
+        } else {
+          top = Math.min(
+            Math.max(triggerRect.bottom + gap, margin),
+            Math.max(margin, viewportHeight - popoverRect.height - margin),
+          );
+        }
+      }
+
+      setPopupPosition({ top, left });
+    };
+
+    const frame = window.requestAnimationFrame(updatePopupPosition);
+    window.addEventListener('resize', updatePopupPosition);
+    window.addEventListener('scroll', updatePopupPosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updatePopupPosition);
+      window.removeEventListener('scroll', updatePopupPosition, true);
+    };
+  }, [isOpen, popupPlacement]);
+
   const handleDateChange = (date) => {
     if (!(date instanceof Date)) return;
     onChange(toInputDate(date));
     setIsOpen(false);
   };
+
+  const popover = isOpen ? (
+    <div
+      ref={popoverRef}
+      className={`dob-calendar-popover ${popupPlacement === 'side' ? 'dob-calendar-popover-side' : ''}`.trim()}
+      role="dialog"
+      aria-label={`Choose ${label}`}
+      style={popupPlacement === 'side' ? {
+        position: 'fixed',
+        top: popupPosition?.top ?? 0,
+        left: popupPosition?.left ?? 0,
+        zIndex: 1000,
+        visibility: popupPosition ? 'visible' : 'hidden',
+      } : undefined}
+    >
+      <Calendar
+        className="loan-birth-calendar"
+        value={selectedDate}
+        minDate={toCalendarDate(min) || undefined}
+        maxDate={toCalendarDate(max) || undefined}
+        defaultActiveStartDate={selectedDate || toCalendarDate(calendarStartDate) || toCalendarDate(min) || toCalendarDate(max) || new Date()}
+        onChange={handleDateChange}
+        locale="en-IN"
+      />
+      {value && !required ? (
+        <button type="button" className="lead-date-picker-clear" onClick={() => {
+          onChange('');
+          setIsOpen(false);
+        }}>Clear date</button>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <>
@@ -93,31 +200,16 @@ export default function LeadDatePicker({
           aria-invalid={invalid || undefined}
           data-date-picker-trigger={name}
           disabled={disabled}
+          ref={triggerRef}
           style={triggerStyle}
           onClick={() => setIsOpen((open) => !open)}
         >
           <span className={value ? '' : 'dob-picker-placeholder'}>{formatDate(value, emptyLabel)}</span>
           <CalendarDays size={16} aria-hidden="true" />
         </button>
-        {isOpen ? (
-          <div className="dob-calendar-popover" role="dialog" aria-label={`Choose ${label}`}>
-            <Calendar
-              className="loan-birth-calendar"
-              value={selectedDate}
-              minDate={toCalendarDate(min) || undefined}
-              maxDate={toCalendarDate(max) || undefined}
-              defaultActiveStartDate={selectedDate || toCalendarDate(calendarStartDate) || toCalendarDate(min) || toCalendarDate(max) || new Date()}
-              onChange={handleDateChange}
-              locale="en-IN"
-            />
-            {value && !required ? (
-              <button type="button" className="lead-date-picker-clear" onClick={() => {
-                onChange('');
-                setIsOpen(false);
-              }}>Clear date</button>
-            ) : null}
-          </div>
-        ) : null}
+        {popupPlacement === 'side' && popover && typeof document !== 'undefined'
+          ? createPortal(popover, document.body)
+          : popover}
       </div>
     </>
   );
