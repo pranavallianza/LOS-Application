@@ -5,6 +5,28 @@ const API_V1_URL = /\/api\/v\d+$/i.test(API_BASE_URL)
   ? API_BASE_URL
   : `${API_BASE_URL}/api`;
 
+const LOOKUP_ROUTES = {
+  list: process.env.NEXT_PUBLIC_LOOKUPS_ROUTE,
+  byId: process.env.NEXT_PUBLIC_LOOKUP_BY_ID_ROUTE,
+  status: process.env.NEXT_PUBLIC_LOOKUP_STATUS_ROUTE,
+  subLookups: process.env.NEXT_PUBLIC_LOOKUP_SUBLOOKUPS_ROUTE,
+  subLookupById: process.env.NEXT_PUBLIC_SUBLOOKUP_BY_ID_ROUTE,
+  subLookupStatus: process.env.NEXT_PUBLIC_SUBLOOKUP_STATUS_ROUTE,
+};
+
+function buildLookupRoute(template, values = {}) {
+  if (!template) {
+    throw new Error("Lookup API routes are not configured in the environment.");
+  }
+
+  return template.replace(/\{(\w+)\}/g, (match, key) => {
+    if (values[key] === undefined || values[key] === null) {
+      throw new Error(`Missing value for lookup API route parameter: ${key}.`);
+    }
+    return encodeURIComponent(values[key]);
+  });
+}
+
 function getRequestHeaders() {
   const storedAuthData = window.localStorage.getItem("authData");
   if (!storedAuthData) {
@@ -54,27 +76,8 @@ function toDisplayStatus(status, isActive = true) {
   return active ? "Active" : "Inactive";
 }
 
-// export async function getLookupTypes(signal) {
-//   const result = await requestLookupApi("/api/lookups?search=&status=ALL", {
-//     method: "GET",
-//     signal,
-//   });
-//   if (!Array.isArray(result?.data)) {
-//     throw new Error("The lookup service returned an unsupported lookup list.");
-//   }
-//   return result.data.map((lookup) => ({
-//     id: lookup.id ?? lookup.code,
-//     code: lookup.code ?? "",
-//     name: lookup.name ?? "",
-//     description: lookup.description ?? "",
-//     status: toDisplayStatus(lookup.status, lookup.isActive),
-//     isFixed: Boolean(lookup.isFixed),
-//     subLookups: [],
-//   }));
-// }
-
 export async function getLookupTypes(signal) {
-  const result = await requestLookupApi("/lookups", {
+  const result = await requestLookupApi(buildLookupRoute(LOOKUP_ROUTES.list), {
     method: "GET",
     params: {
       search: "",
@@ -100,7 +103,7 @@ export async function getLookupTypes(signal) {
 
 export async function getLookupOptions(lookupTypeCode, signal) {
   const result = await requestLookupApi(
-    `/lookups/${encodeURIComponent(lookupTypeCode)}/sub-lookups`,
+    buildLookupRoute(LOOKUP_ROUTES.subLookups, { lookupCode: lookupTypeCode }),
     { method: "GET", signal },
   );
   if (!Array.isArray(result?.data)) {
@@ -120,14 +123,14 @@ export async function getLookupOptions(lookupTypeCode, signal) {
 }
 
 export async function createLookupType(lookupType) {
-  return requestLookupApi("/lookups", {
+  return requestLookupApi(buildLookupRoute(LOOKUP_ROUTES.list), {
     method: "POST",
     body: JSON.stringify(lookupType),
   });
 }
 
 export async function updateLookupType(lookupId, lookupType) {
-  return requestLookupApi(`/lookups/${encodeURIComponent(lookupId)}`, {
+  return requestLookupApi(buildLookupRoute(LOOKUP_ROUTES.byId, { lookupId }), {
     method: "PUT",
     body: JSON.stringify(lookupType),
   });
@@ -135,7 +138,7 @@ export async function updateLookupType(lookupId, lookupType) {
 
 export async function createLookupSubType(lookupTypeCode, subType) {
   return requestLookupApi(
-    `/lookups/${encodeURIComponent(lookupTypeCode)}/sub-lookups`,
+    buildLookupRoute(LOOKUP_ROUTES.subLookups, { lookupCode: lookupTypeCode }),
     {
       method: "POST",
       body: JSON.stringify(subType),
@@ -144,15 +147,20 @@ export async function createLookupSubType(lookupTypeCode, subType) {
 }
 
 export async function updateLookupSubType(subLookupId, subType) {
-  return requestLookupApi(`/sub-lookups/${encodeURIComponent(subLookupId)}`, {
-    method: "PUT",
-    body: JSON.stringify(subType),
-  });
+  return requestLookupApi(
+    buildLookupRoute(LOOKUP_ROUTES.subLookupById, { subLookupId }),
+    {
+      method: "PUT",
+      body: JSON.stringify(subType),
+    },
+  );
 }
 
 export async function setLookupTypeActive(lookupType, active) {
   return requestLookupApi(
-    `/lookups/${encodeURIComponent(lookupType.id ?? lookupType.code)}/status`,
+    buildLookupRoute(LOOKUP_ROUTES.status, {
+      lookupId: lookupType.id ?? lookupType.code,
+    }),
     {
       method: "PATCH",
       body: JSON.stringify({ status: active ? "Active" : "Inactive" }),
@@ -162,7 +170,7 @@ export async function setLookupTypeActive(lookupType, active) {
 
 export async function setLookupSubTypeActive(subTypeId, active) {
   return requestLookupApi(
-    `/sub-lookups/${encodeURIComponent(subTypeId)}/status`,
+    buildLookupRoute(LOOKUP_ROUTES.subLookupStatus, { subLookupId: subTypeId }),
     {
       method: "PATCH",
       body: JSON.stringify({ status: active ? "Active" : "Inactive" }),
