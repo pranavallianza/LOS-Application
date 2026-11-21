@@ -20,7 +20,29 @@ import {
 } from "lucide-react";
 import AppShell from "../../components/AppShell";
 import { PermissionGate } from "../../components/AccessControl";
-import { createBankBranch, getBankProfile } from "../../services/bankProfile";
+import { createBankBranch } from "../../services/bank_branch";
+import { getBankProfile } from "../../services/bankProfile";
+
+const initialBranchForm = {
+  bankName: "",
+  branchCode: "",
+  branchName: "",
+  rbiLicenseNo: "",
+  registrationNo: "",
+  incorporationDate: "",
+  workingFrom: "",
+  workingTo: "",
+  address: "",
+  address1: "",
+  address2: "",
+  city: "",
+  state: "",
+  country: "",
+  pinCode: "",
+  primaryContactNumber: "",
+  secondaryContactNumber: "",
+  emailId: "",
+};
 
 const fieldLabels = {
   name: "Bank Name",
@@ -217,23 +239,7 @@ export default function BankProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [addBranchOpen, setAddBranchOpen] = useState(false);
-  const [branchForm, setBranchForm] = useState({
-    bankName: "",
-    branchCode: "",
-    branchName: "",
-    rbiLicenseNo: "",
-    registrationNo: "",
-    incorporationDate: "",
-    address: "",
-    workingFrom: "",
-    workingTo: "",
-    address1: "",
-    address2: "",
-    city: "",
-    state: "",
-    country: "",
-    pinCode: "",
-  });
+  const [branchForm, setBranchForm] = useState(initialBranchForm);
   const [branchSubmitting, setBranchSubmitting] = useState(false);
   const [branchSuccess, setBranchSuccess] = useState("");
   const [branchError, setBranchError] = useState("");
@@ -300,13 +306,7 @@ export default function BankProfilePage() {
 
     try {
       const result = await createBankBranch(branchForm);
-      console.log(
-        "[bank profile] submitted branch:",
-        result.data || branchForm,
-      );
-      setBranchSuccess(
-        "Branch submitted successfully. The payload was logged to the console.",
-      );
+      setBranchSuccess(result?.message || "Branch submitted successfully.");
     } catch (submitError) {
       setBranchError(submitError.message || "Unable to submit the branch.");
     } finally {
@@ -316,23 +316,7 @@ export default function BankProfilePage() {
 
   function closeBranchDialog() {
     setAddBranchOpen(false);
-    setBranchForm({
-      bankName: "",
-      branchCode: "",
-      branchName: "",
-      rbiLicenseNo: "",
-      registrationNo: "",
-      incorporationDate: "",
-      address: "",
-      workingFrom: "",
-      workingTo: "",
-      address1: "",
-      address2: "",
-      city: "",
-      state: "",
-      country: "",
-      pinCode: "",
-    });
+    setBranchForm({ ...initialBranchForm });
     setBranchSuccess("");
     setBranchError("");
   }
@@ -478,16 +462,19 @@ export default function BankProfilePage() {
                     ["bankName", "Bank Name", "text", true],
                     ["branchCode", "Branch Code", "text", true],
                     ["branchName", "Branch Name", "text", true],
-                    ["rbiLicenseNo", "RBI License No", "text", false],
-                    ["registrationNo", "Registration No", "text", false],
-                    ["incorporationDate", "Incorporation Date", "date", false],
-                    ["address", "Address", "text", false],
-                    ["address1", "Address 1", "text", false],
-                    ["address2", "Address 2", "text", false],
-                    ["city", "City", "text", false],
-                    ["state", "State", "text", false],
-                    ["country", "Country", "text", false],
-                    ["pinCode", "PinCode", "text", false],
+                    ["rbiLicenseNo", "RBI License No", "text", true],
+                    ["registrationNo", "Registration No", "text", true],
+                    ["incorporationDate", "Incorporation Date", "date", true],
+                    ["address", "Address", "text", true],
+                    ["address1", "Address 1", "text", true],
+                    ["address2", "Address 2", "text", true],
+                    ["city", "City", "text", true],
+                    ["state", "State", "text", true],
+                    ["country", "Country", "text", true],
+                    ["pinCode", "PinCode", "text", true],
+                    ["primaryContactNumber", "Primary Contact Number", "tel", true],
+                    ["secondaryContactNumber", "Secondary Contact Number", "tel", true],
+                    ["emailId", "Email ID", "email", true],
                   ].map(([key, label, type, required]) => (
                     <label
                       className={
@@ -500,11 +487,41 @@ export default function BankProfilePage() {
                         autoFocus={key === "bankName"}
                         required={required}
                         type={type}
+                        maxLength={
+                          key === "pinCode" ||
+                          key === "primaryContactNumber" ||
+                          key === "secondaryContactNumber"
+                            ? key === "pinCode"
+                              ? 6
+                              : 10
+                            : undefined
+                        }
+                        inputMode={
+                          key === "pinCode" ||
+                          key === "primaryContactNumber" ||
+                          key === "secondaryContactNumber"
+                            ? "numeric"
+                            : undefined
+                        }
+                        pattern={
+                          key === "pinCode"
+                            ? "[0-9]{6}"
+                            : key === "primaryContactNumber" ||
+                                key === "secondaryContactNumber"
+                              ? "[0-9]{10}"
+                              : undefined
+                        }
                         value={branchForm[key]}
                         onChange={(event) => {
+                          const value =
+                            key === "pinCode" ||
+                            key === "primaryContactNumber" ||
+                            key === "secondaryContactNumber"
+                              ? event.target.value.replace(/\D/g, "")
+                              : event.target.value;
                           setBranchForm((current) => ({
                             ...current,
-                            [key]: event.target.value,
+                            [key]: value,
                           }));
                           setBranchSuccess("");
                           setBranchError("");
@@ -521,12 +538,14 @@ export default function BankProfilePage() {
                         required
                         type="time"
                         value={branchForm.workingFrom}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setBranchForm((current) => ({
                             ...current,
                             workingFrom: event.target.value,
-                          }))
-                        }
+                          }));
+                          setBranchSuccess("");
+                          setBranchError("");
+                        }}
                       />
                     </label>
                     <label>
@@ -535,12 +554,14 @@ export default function BankProfilePage() {
                         required
                         type="time"
                         value={branchForm.workingTo}
-                        onChange={(event) =>
+                        onChange={(event) => {
                           setBranchForm((current) => ({
                             ...current,
                             workingTo: event.target.value,
-                          }))
-                        }
+                          }));
+                          setBranchSuccess("");
+                          setBranchError("");
+                        }}
                       />
                     </label>
                   </div>
