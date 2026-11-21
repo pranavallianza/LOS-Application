@@ -9,7 +9,7 @@ export async function POST(request) {
 
   return Response.json({
     success: true,
-    message: 'Bank branch received by the dummy backend route.',
+    message: 'Bank branch created successfully.',
     data: { ...branch, id: `BRANCH-${Date.now()}` },
   }, { status: 201 });
 }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Check, RotateCcw, Save } from "lucide-react";
 import AppShell from "../../components/AppShell";
-import { createBankBranch } from "../../services/bankProfile";
+import { createBankBranch } from "../../services/bank_branch";
 
 const initialForm = {
   bankName: "",
@@ -12,28 +12,29 @@ const initialForm = {
   rbiLicenseNo: "",
   registrationNo: "",
   incorporationDate: "",
-  address: "",
   workingFrom: "",
   workingTo: "",
+  address: "",
   address1: "",
   address2: "",
   city: "",
   state: "",
   country: "",
   pinCode: "",
-  contactCode: "",
-  contact: "",
-  contact1Code: "",
-  contact1: "",
-  email: "",
-  micrCode: "",
+  primaryContactNumber: "",
+  secondaryContactNumber: "",
+  emailId: "",
 };
 
 const fieldRules = [
   ["bankName", "Bank Name"],
   ["branchCode", "Branch Code"],
   ["branchName", "Branch Name"],
+  ["rbiLicenseNo", "RBI License No"],
   ["registrationNo", "Registration No"],
+  ["incorporationDate", "Incorporation Date"],
+  ["workingFrom", "Working From"],
+  ["workingTo", "Working To"],
   ["address", "Address"],
   ["address1", "Address1"],
   ["address2", "Address2"],
@@ -41,8 +42,9 @@ const fieldRules = [
   ["state", "State"],
   ["country", "Country"],
   ["pinCode", "PinCode"],
-  ["email", "Email ID"],
-  ["micrCode", "MICR Code"],
+  ["primaryContactNumber", "Primary Contact Number"],
+  ["secondaryContactNumber", "Secondary Contact Number"],
+  ["emailId", "Email ID"],
 ];
 
 function validate(form) {
@@ -108,10 +110,15 @@ function validate(form) {
     errors.branchCode = "Use 2–20 letters, numbers, or hyphens.";
   if (value("pinCode") && !/^\d{6}$/.test(value("pinCode")))
     errors.pinCode = "PinCode must contain 6 digits.";
-  if (value("email") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value("email")))
-    errors.email = "Enter a valid email address.";
-  if (value("micrCode") && !/^\d{9}$/.test(value("micrCode")))
-    errors.micrCode = "MICR Code must contain 9 digits.";
+  ["primaryContactNumber", "secondaryContactNumber"].forEach((field) => {
+    if (value(field) && !/^\d{10}$/.test(value(field)))
+      errors[field] = "Phone number must contain exactly 10 digits.";
+  });
+  if (
+    value("emailId") &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value("emailId"))
+  )
+    errors.emailId = "Enter a valid email address.";
   if (
     value("rbiLicenseNo") &&
     !/^[A-Z0-9/-]{3,30}$/i.test(value("rbiLicenseNo"))
@@ -122,14 +129,6 @@ function validate(form) {
     !/^[A-Z0-9/-]{3,30}$/i.test(value("registrationNo"))
   )
     errors.registrationNo = "Use 3–30 letters, numbers, /, or hyphens.";
-  ["contactCode", "contact1Code"].forEach((field) => {
-    if (value(field) && !/^\d{2,5}$/.test(value(field)))
-      errors[field] = "Use numbers only, 2–5 digits.";
-  });
-  ["contact", "contact1"].forEach((field) => {
-    if (value(field) && !/^\d{10}$/.test(value(field)))
-      errors[field] = "Phone number must contain exactly 10 digits.";
-  });
   if (
     value("incorporationDate") &&
     value("incorporationDate") > new Date().toISOString().slice(0, 10)
@@ -168,6 +167,7 @@ function Field({
         type={type}
         value={form[name]}
         onChange={onChange}
+        required={required}
         maxLength={maxLength}
         inputMode={inputMode}
         aria-invalid={Boolean(errors[name])}
@@ -189,11 +189,8 @@ export default function BankBranchPage() {
     const { name } = event.target;
     const value = [
       "pinCode",
-      "micrCode",
-      "contactCode",
-      "contact",
-      "contact1Code",
-      "contact1",
+      "primaryContactNumber",
+      "secondaryContactNumber",
     ].includes(name)
       ? event.target.value.replace(/\D/g, "")
       : event.target.value;
@@ -222,11 +219,7 @@ export default function BankBranchPage() {
     setSubmitting(true);
     try {
       const result = await createBankBranch(form);
-      console.log("[bank branch] submitted payload:", form);
-      setNotice(
-        result?.message ||
-          "Branch submitted successfully. The payload was logged to the console.",
-      );
+      setNotice(result?.message || "Branch submitted successfully.");
     } catch (error) {
       setRequestError(error?.message || "Unable to submit the branch.");
     } finally {
@@ -297,6 +290,7 @@ export default function BankBranchPage() {
                 form={form}
                 errors={errors}
                 onChange={updateField}
+                required
                 maxLength={30}
               />
               <Field
@@ -315,16 +309,7 @@ export default function BankBranchPage() {
                 form={form}
                 errors={errors}
                 onChange={updateField}
-              />
-              <Field
-                label="MICR Code"
-                name="micrCode"
-                form={form}
-                errors={errors}
-                onChange={updateField}
                 required
-                maxLength={9}
-                inputMode="numeric"
               />
               <div className="bank-branch-time-field">
                 <span className="bank-branch-time-title">Working Timings</span>
@@ -337,6 +322,7 @@ export default function BankBranchPage() {
                       type="time"
                       value={form.workingFrom}
                       onChange={updateField}
+                      required
                     />
                   </label>
                   <span className="bank-branch-time-separator">to</span>
@@ -348,6 +334,7 @@ export default function BankBranchPage() {
                       type="time"
                       value={form.workingTo}
                       onChange={updateField}
+                      required
                     />
                   </label>
                 </div>
@@ -443,62 +430,31 @@ export default function BankBranchPage() {
               </div>
             </div>
             <div className="bank-branch-grid">
-              <div className="bank-branch-field">
-                <span>Primary Contact</span>
-                <div className="bank-branch-contact">
-                  <input
-                    aria-label="Contact country or area code"
-                    name="contactCode"
-                    value={form.contactCode}
-                    onChange={updateField}
-                    maxLength={5}
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="+91"
-                  />
-                  <input
-                    aria-label="Contact number"
-                    name="contact"
-                    value={form.contact}
-                    onChange={updateField}
-                    maxLength={10}
-                    inputMode="numeric"
-                  />
-                </div>
-                {errors.contactCode || errors.contact ? (
-                  <small>{errors.contactCode || errors.contact}</small>
-                ) : null}
-              </div>
-              <div className="bank-branch-field">
-                <span>Secondary Contact</span>
-                <div className="bank-branch-contact">
-                  <input
-                    aria-label="Contact1 country or area code"
-                    name="contact1Code"
-                    value={form.contact1Code}
-                    onChange={updateField}
-                    maxLength={5}
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="+91"
-                    readOnly
-                  />
-                  <input
-                    aria-label="Contact1 number"
-                    name="contact1"
-                    value={form.contact1}
-                    onChange={updateField}
-                    maxLength={10}
-                    inputMode="numeric"
-                  />
-                </div>
-                {errors.contact1Code || errors.contact1 ? (
-                  <small>{errors.contact1Code || errors.contact1}</small>
-                ) : null}
-              </div>
+              <Field
+                label="Primary Contact Number"
+                name="primaryContactNumber"
+                type="tel"
+                form={form}
+                errors={errors}
+                onChange={updateField}
+                required
+                maxLength={10}
+                inputMode="numeric"
+              />
+              <Field
+                label="Secondary Contact Number"
+                name="secondaryContactNumber"
+                type="tel"
+                form={form}
+                errors={errors}
+                onChange={updateField}
+                required
+                maxLength={10}
+                inputMode="numeric"
+              />
               <Field
                 label="Email ID"
-                name="email"
+                name="emailId"
                 type="email"
                 form={form}
                 errors={errors}
