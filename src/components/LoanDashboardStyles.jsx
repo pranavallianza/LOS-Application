@@ -263,6 +263,33 @@ export default function LoanDashboardStyles() {
             background: #edf6f4;
           }
 
+          .loan-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 14px 0 0;
+            color: #718185;
+            font-size: 11px;
+          }
+
+          .loan-pagination > div {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+          }
+
+          .loan-pagination button {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+          }
+
+          .loan-pagination button:disabled {
+            cursor: not-allowed;
+            opacity: .5;
+          }
+
           .application-dialog {
             width: min(100%, 560px);
           }

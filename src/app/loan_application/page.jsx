@@ -8,6 +8,8 @@ import {
   FilePlus2,
   Search,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   Pencil,
   X,
@@ -37,6 +39,8 @@ import RetailLoanApplicationForm, {
 } from '../../components/RetailLoanApplicationForm';
 import RetailLoanApplicationView from '../../components/RetailLoanApplicationView';
 
+const PAGE_SIZE = 10;
+
 export default function LoanDashboardPage() {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState('');
@@ -52,6 +56,7 @@ export default function LoanDashboardPage() {
   const [persistenceError, setPersistenceError] = useState('');
   const [applicationSaveNotice, setApplicationSaveNotice] = useState('');
   const [showRetailForm, setShowRetailForm] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const applicationsAvailable = Array.isArray(api.applications);
   const applications = applicationsAvailable ? dashboardApplications : [];
   const customers = Array.isArray(api.customers) ? api.customers : [];
@@ -145,6 +150,11 @@ export default function LoanDashboardPage() {
       ),
     );
   }, [applicationRows, searchTerm]);
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const pageRows = filteredRows.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
 
   const metrics = [
     {
@@ -376,6 +386,7 @@ export default function LoanDashboardPage() {
             onSubmit={(event) => {
               event.preventDefault();
               setSearchTerm(searchInput);
+              setCurrentPage(1);
             }}
           >
             <label className="loan-search">
@@ -413,6 +424,7 @@ export default function LoanDashboardPage() {
               </span>
             </div>
           ) : (
+            <>
             <div className="loan-table-scroll">
               <table className="loan-applications-table">
                 <thead>
@@ -429,10 +441,10 @@ export default function LoanDashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map(
+                  {pageRows.map(
                     ({ application, sourceIndex, id, customerName, category, loanType }, index) => (
                       <tr key={`${id}-${index}`}>
-                        <td>{index + 1}</td>
+                        <td>{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
                         <td>
                           <strong className="application-id">{id}</strong>
                         </td>
@@ -486,6 +498,39 @@ export default function LoanDashboardPage() {
                 </tbody>
               </table>
             </div>
+            <div className="loan-pagination" aria-label="Retail Loan application pagination">
+              <span>
+                Showing {(currentPage - 1) * PAGE_SIZE + 1}
+                {' - '}
+                {Math.min(currentPage * PAGE_SIZE, filteredRows.length)}
+                {' of '}
+                {filteredRows.length}
+              </span>
+              <div>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={currentPage === 1}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={15} aria-hidden="true" />
+                  Previous
+                </button>
+                <span aria-live="polite">Page {currentPage} of {pageCount}</span>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+                  disabled={currentPage === pageCount}
+                  aria-label="Next page"
+                >
+                  Next
+                  <ChevronRight size={15} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            </>
           )}
 
           {/* {applicationsAvailable && applications.length > 0 && (
