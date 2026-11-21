@@ -170,10 +170,19 @@ export default function RuleEngine() {
       ...form,
       offset: form.decision === "Override" ? Number(form.offset) : 0,
     };
+    const payload = editId ? rule : { ...rule, id: ++uid, active: true };
+    if (!editId) {
+      const { a, b, op, ...readablePayload } = payload;
+      console.log("Create rule payload:", {
+        ...readablePayload,
+        operator: op,
+        ...(op === "between" ? { from: a, to: b } : { value: a }),
+      });
+    }
     setRules((rs) =>
       editId
         ? rs.map((r) => (r.id === editId ? { ...r, ...rule } : r))
-        : [...rs, { ...rule, id: ++uid, active: true }],
+        : [...rs, payload],
     );
     say(editId ? "Rule updated" : "Rule created");
     setForm(EMPTY);
