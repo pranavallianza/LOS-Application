@@ -239,6 +239,16 @@ export default function DashboardPage() {
           font-weight: 500;
         }
 
+        @media (min-width: 1200px) {
+          .dashboard-page > header,
+          .dashboard-page > section {
+            box-sizing: border-box;
+            max-width: 1560px;
+            margin-right: auto;
+            margin-left: auto;
+          }
+        }
+
         .dashboard-heading {
           display: flex;
           align-items: flex-end;

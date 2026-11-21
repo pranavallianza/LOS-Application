@@ -14,6 +14,7 @@ import {
   User,
 } from 'lucide-react';
 import LeadDatePicker from './LeadDatePicker';
+import { getRetailLookups } from '../services/retail_lead_management';
 
 /*
 const verhoeffMultiplication = [
@@ -89,6 +90,20 @@ const getTodayInputDate = () => {
 };
 
 const normalizeLookupValue = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const lookupNamesByField = {
+  namePrefix: ['Title', 'Name Prefix', 'Salutation'],
+  residentialStatus: ['Residential Status'],
+  gender: ['Gender'],
+  maritalStatus: ['Marital Status'],
+  addressType: ['Address Type'],
+  loanProductType: ['Loan Product Type', 'Loan Product'],
+  loanPurpose: ['Loan Purpose', 'Purpose of Loan'],
+  tenureUnit: ['Unit', 'Tenure Unit', 'Tenure'],
+  occupation: ['Occupation'],
+  employerType: ['Employer Type'],
+  employmentType: ['Employment Type'],
+  acquisitionChannel: ['Acquisition Channel', 'Lead Acquisition Channel'],
+};
 const isBasicAadhaarNumber = (value) => /^[0-9]{12}$/.test(value);
 const EMAIL_PATTERN = '[^\\s@]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}';
 const nameHasValidCharacters = (value) => /^[\p{L}\p{M}]+(?: [\p{L}\p{M}]+)*$/u.test(value);
@@ -244,7 +259,7 @@ const initialForm = {
   otherLoanPurpose: '',
   securityAmount: '',
   tenure: '',
-  tenureUnit: 'month',
+  tenureUnit: '',
   instalments: '',
   collateral: '',
   employmentType: '',
@@ -619,7 +634,9 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
   const [touchedFields, setTouchedFields] = useState({});
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [inputFeedback, setInputFeedback] = useState({});
-  const lookupOptions = {};
+  const [lookups, setLookups] = useState([]);
+  const [isLoadingLookups, setIsLoadingLookups] = useState(false);
+  const [lookupError, setLookupError] = useState('');
 
   useEffect(() => {
     if (!open) return undefined;
@@ -641,6 +658,30 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     setIsSubmitting(false);
     return undefined;
   }, [open, initialData]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    let isCurrent = true;
+    setIsLoadingLookups(true);
+    setLookupError('');
+    getRetailLookups({ refresh: true })
+      .then((result) => {
+        if (isCurrent) setLookups(result);
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setLookupError(error instanceof Error ? error.message : 'Unable to load lookup values.');
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoadingLookups(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -667,13 +708,48 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     ? String(Math.round(principal + Number(computedTotalInterest)))
     : '';
   const todayInputDate = getTodayInputDate();
+  const getLookupType = (field) => {
+    const names = lookupNamesByField[field] || [];
+    return lookups.find((lookup) => names.some((name) => normalizeLookupValue(lookup.name) === normalizeLookupValue(name)));
+  };
   const getLookupValues = (field, currentValue, normalize = false) => {
-    const options = lookupOptions[field] || [];
+    const lookup = getLookupType(field);
+    const options = (lookup?.subLookups || [])
+      .slice()
+      .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0))
+      .map((option, index) => ({
+        id: option.id ?? option.code ?? `${lookup.code}-${index}`,
+        code: option.code ?? '',
+        name: option.name ?? option.description ?? option.code ?? '',
+      }))
+      .filter((option) => option.name);
     const matchesCurrentValue = (option) => normalize
       ? normalizeLookupValue(option.name) === normalizeLookupValue(currentValue)
       : option.name === currentValue;
     if (!currentValue || options.some(matchesCurrentValue)) return options;
     return [{ id: `current-${field}-${currentValue}`, name: currentValue }, ...options];
+  };
+  const getSelectPlaceholder = (field) => {
+    const lookup = getLookupType(field);
+    const labels = {
+      namePrefix: 'Title',
+      residentialStatus: 'Residential Status',
+      gender: 'Gender',
+      maritalStatus: 'Marital Status',
+      addressType: 'Address Type',
+      loanProductType: 'Loan Product Type',
+      loanPurpose: 'Loan Purpose',
+      tenureUnit: 'Tenure Unit',
+      occupation: 'Occupation',
+      employerType: 'Employer Type',
+      employmentType: 'Employment Type',
+      acquisitionChannel: 'Acquisition Channel',
+    };
+    return (
+      <option value="" data-lookup-code={lookup?.code}>
+        {`Select ${lookup?.code || lookup?.name || labels[field] || ''}`.trim()}
+      </option>
+    );
   };
   const aadhaarInputInvalid = Boolean(aadhaarMessage && /required|remaining|invalid|enter a valid/i.test(aadhaarMessage));
   const downPaymentExceedsLoan = form.loanAmount !== ''
@@ -684,6 +760,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
 
   const getFieldValidationMessage = (name, value) => {
     const text = String(value ?? '');
+    if (name === 'branch' && !text.trim()) return 'Branch is required.';
     if (name === 'dateOfBirth' && !text) return 'Date of Birth is required.';
     if (['firstName', 'middleName', 'lastName', 'designation'].includes(name)) {
       if (!text.trim()) return ['firstName', 'lastName'].includes(name) ? 'This field is required.' : '';
@@ -1036,7 +1113,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
           <label className="lead-field lead-prefix-field">
             <span>Title <em>*</em></span>
             <select name="namePrefix" value={form.namePrefix} onChange={handleChange} required>
-              <option value="">title</option>
+              {getSelectPlaceholder('namePrefix')}
               {getLookupValues('namePrefix', form.namePrefix).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
             </select>
           </label>
@@ -1140,8 +1217,9 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
           {form.email && getFieldValidationMessage('email', form.email) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getFieldValidationMessage('email', form.email)}</p> : null}
         </label>
         <label className="lead-field">
-          <span>Branch</span>
-          <input name="branch" value={form.branch} onChange={handleChange} />
+          <span>Branch <em>*</em></span>
+          <input name="branch" value={form.branch} onChange={handleChange} required aria-invalid={Boolean(getVisibleFieldError('branch', form.branch))} />
+          {getVisibleFieldError('branch', form.branch) ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('branch', form.branch)}</p> : null}
         </label>
       </div>
 
@@ -1149,7 +1227,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <label className="lead-field">
           <span>Residential Status</span>
           <select name="residentialStatus" value={form.residentialStatus} onChange={handleChange}>
-            <option value="">Select residential status</option>
+            {getSelectPlaceholder('residentialStatus')}
             {getLookupValues('residentialStatus', form.residentialStatus).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
         </label>
@@ -1157,7 +1235,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <label className="lead-field">
           <span>Gender <em>*</em></span>
           <select name="gender" value={form.gender} onChange={handleChange} required>
-            <option value="">Select gender</option>
+            {getSelectPlaceholder('gender')}
             {getLookupValues('gender', form.gender).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
         </label>
@@ -1165,7 +1243,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <label className="lead-field">
           <span>Marital Status <em>*</em></span>
           <select name="maritalStatus" value={form.maritalStatus} onChange={handleChange} required>
-            <option value="">Select marital status</option>
+            {getSelectPlaceholder('maritalStatus')}
             {getLookupValues('maritalStatus', form.maritalStatus).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
         </label>
@@ -1213,7 +1291,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
               <label className="lead-field">
                 <span>Address Type <em>*</em></span>
                 <select aria-label={`Address ${index + 1} type`} value={address.addressType} onChange={(event) => updateAddressField(index, 'addressType', event.target.value)} onBlur={() => setTouchedFields((current) => ({ ...current, [`addressDetails.${index}.addressType`]: true }))} required aria-invalid={Boolean(getVisibleAddressError(index, 'addressType', address.addressType, 'Address Type'))}>
-                  <option value="">Select address type</option>
+                  {getSelectPlaceholder('addressType')}
                   {getLookupValues('addressType', address.addressType).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
                 </select>
                 {getVisibleAddressError(index, 'addressType', address.addressType, 'Address Type') || inputFeedback[`addressDetails.${index}.addressType`] ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleAddressError(index, 'addressType', address.addressType, 'Address Type') || inputFeedback[`addressDetails.${index}.addressType`]}</p> : null}
@@ -1260,7 +1338,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <span>Loan Product Type <em>*</em></span>
         <select name="loanProductType" value={form.loanProductType} onChange={handleChange} required={!initialData || Boolean(initialData.loanProductType || initialData.product)}>
-          <option value="">Select product type</option>
+          {getSelectPlaceholder('loanProductType')}
           {getLookupValues('loanProductType', form.loanProductType).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
         </select>
       </label>
@@ -1274,7 +1352,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <span>Purpose of Loan</span>
         <select name="loanPurpose" value={form.loanPurpose} onChange={handleChange} required={!initialData || Boolean(initialData.loanPurpose || initialData.purposeOfLoan)} style={{ minHeight: '42px' }}>
-          <option value="">Select purpose</option>
+          {getSelectPlaceholder('loanPurpose')}
           {getLookupValues('loanPurpose', form.loanPurpose).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
         </select>
       </label>
@@ -1309,7 +1387,8 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         </label>
         <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <span>Unit</span>
-          <select name="tenureUnit" value={form.tenureUnit} onChange={handleChange} style={{ minHeight: '42px' }}>
+          <select name="tenureUnit" value={form.tenureUnit} onChange={handleChange} style={{ minHeight: '42px' }} required>
+            {getSelectPlaceholder('tenureUnit')}
             {getLookupValues('tenureUnit', form.tenureUnit, true).map((option) => <option key={option.id} value={normalizeLookupValue(option.name)}>{option.name}</option>)}
           </select>
         </label>
@@ -1351,7 +1430,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <label className="lead-field">
           <span>Occupation</span>
           <select name="occupation" value={form.occupation} onChange={handleChange} aria-invalid={Boolean(getVisibleFieldError('occupation', form.occupation) || inputFeedback.occupation)}>
-            <option value="">Select occupation</option>
+            {getSelectPlaceholder('occupation')}
             {getLookupValues('occupation', form.occupation).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
           {getVisibleFieldError('occupation', form.occupation) || inputFeedback.occupation ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('occupation', form.occupation) || inputFeedback.occupation}</p> : null}
@@ -1360,7 +1439,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <label className="lead-field">
           <span>Employer Type</span>
           <select name="employerType" value={form.employerType} onChange={handleChange} aria-invalid={Boolean(getVisibleFieldError('employerType', form.employerType) || inputFeedback.employerType)}>
-            <option value="">Select employer type</option>
+            {getSelectPlaceholder('employerType')}
             {getLookupValues('employerType', form.employerType).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
           {getVisibleFieldError('employerType', form.employerType) || inputFeedback.employerType ? <p className="lead-inline-hint lead-inline-hint-error" role="alert">{getVisibleFieldError('employerType', form.employerType) || inputFeedback.employerType}</p> : null}
@@ -1369,7 +1448,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <label className="lead-field">
           <span>Employment Type <em>*</em></span>
           <select name="employmentType" value={form.employmentType} onChange={handleChange} required={!initialData || Boolean(initialData.employmentType)}>
-            <option value="">Select type</option>
+            {getSelectPlaceholder('employmentType')}
             {getLookupValues('employmentType', form.employmentType).map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}
           </select>
         </label>
@@ -1521,7 +1600,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
   onChange={handleChange}
   required={!initialData || Boolean(initialData.acquisitionChannel || initialData.leadAcquisitionChannel)}
 >
-  <option value="">Select channel</option>
+  {getSelectPlaceholder('acquisitionChannel')}
   {getLookupValues('acquisitionChannel', form.acquisitionChannel).map((option) => (
     <option key={option.id} value={option.name}>
       {option.name}
@@ -1644,6 +1723,8 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
       </div>
       <div className="lead-page-content">
         <form className="lead-form" onSubmit={(event) => event.preventDefault()}>
+          {isLoadingLookups ? <p role="status">Loading dropdown values...</p> : null}
+          {lookupError ? <p className="lead-submit-error" role="alert">{lookupError}</p> : null}
           {submissionError ? <p className="lead-submit-error" role="alert">{submissionError}</p> : null}
           <div className="loan-application-card lead-onboarding-card">
             <nav className="loan-stepper" aria-label="Lead form steps">

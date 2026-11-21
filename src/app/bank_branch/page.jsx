@@ -240,6 +240,7 @@ export default function BankBranchPage() {
         <header className="bank-branch-heading">
           <div>
             <h1>Bank Branch Master</h1>
+            <span>Manage branch information, registered address, and contact details.</span>
           </div>
         </header>
         {requestError && (

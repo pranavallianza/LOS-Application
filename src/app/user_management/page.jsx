@@ -227,6 +227,8 @@ export default function UserManagementPage() {
 
     <AppShell title="User Management">
 
+      <div className="user-management-page">
+
       <div style={{ marginTop: '-15px', marginBottom: '26px' }}>
         <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>
           User Management
@@ -908,6 +910,8 @@ export default function UserManagementPage() {
         </footer>
 
       </Card>
+
+      </div>
 
     </AppShell>
 
