@@ -3045,16 +3045,38 @@ td strong {
   color: #8fa2a8;
 }
 .bank-branch-page {
-  max-width: 1180px;
-  margin: -8px auto 0;
-  padding: 0 24px 36px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 32px 40px;
   color: #1d3b48;
+}
+@media (min-width: 1200px) {
+  .los-page-wrap:has(.bank-branch-page),
+  .los-page-wrap:has(.dashboard-page),
+  .los-page-wrap:has(.pm-wrap),
+  .los-page-wrap:has(.customer-dashboard),
+  .los-page-wrap:has(.customer-onboarding-shell),
+  .los-page-wrap:has(.user-management-page) {
+    max-width: none;
+  }
+
+  .customer-dashboard,
+  .customer-onboarding-shell,
+  .user-management-page {
+    box-sizing: border-box;
+    max-width: 1560px;
+    margin-right: auto;
+    margin-left: auto;
+  }
 }
 .bank-branch-heading {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  margin-bottom: 18px;
+  width: min(100%, 1320px);
+  margin: 0 auto 20px;
 }
 .bank-branch-eyebrow {
   margin: 0 0 6px;
@@ -3067,16 +3089,19 @@ td strong {
 .bank-branch-heading h1 {
   margin: 0;
   color: #1d3b48;
-  font: 700 29px Manrope;
+  font: 700 25px Manrope;
   letter-spacing: -0.4px;
 }
 .bank-branch-heading span {
   display: block;
-  margin-top: 6px;
+  margin-top: 5px;
   color: #71858b;
-  font-size: 13px;
+  font-size: 12px;
 }
 .bank-branch-card {
+  box-sizing: border-box;
+  width: min(100%, 1320px);
+  margin: 0 auto;
   overflow: hidden;
   border: 1px solid #dfe9eb;
   border-radius: 10px;
@@ -3084,7 +3109,7 @@ td strong {
   box-shadow: 0 8px 24px rgba(17, 36, 44, 0.05);
 }
 .bank-branch-section {
-  padding: 22px 26px 26px;
+  padding: 24px 30px 28px;
   border-bottom: 1px solid #edf1f3;
 }
 .bank-branch-section-title {
@@ -3116,8 +3141,8 @@ td strong {
 }
 .bank-branch-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px 22px;
 }
 .bank-branch-field {
   display: flex;
@@ -3138,20 +3163,20 @@ td strong {
 .bank-branch-field input {
   width: 100%;
   height: 42px;
-  border: 1px solid #d4dde5;
+  border: 1px solid #D5E5DC;
   border-radius: 6px;
-  background: #f9fbfc;
+  background: transparent;
   padding: 0 11px;
   color: #1f3545;
   outline: none;
 }
 .bank-branch-field input:focus {
   border-color: #177e7a;
-  box-shadow: 0 0 0 3px rgba(23, 126, 122, 0.1);
+  box-shadow: none;
 }
 .bank-branch-field input[aria-invalid="true"] {
   border-color: #cf6262;
-  background: #fffafa;
+  background: transparent;
 }
 .bank-branch-field small {
   color: #c62828;
@@ -3187,16 +3212,16 @@ td strong {
   width: 100%;
   min-width: 0;
   height: 42px;
-  border: 1px solid #d4dde5;
+  border: 1px solid #D5E5DC;
   border-radius: 6px;
-  background: #f9fbfc;
+  background: transparent;
   padding: 0 8px;
   color: #1f3545;
   outline: none;
 }
 .bank-branch-time-controls input:focus {
   border-color: #177e7a;
-  box-shadow: 0 0 0 3px rgba(23, 126, 122, 0.1);
+  box-shadow: none;
 }
 .bank-branch-time-separator {
   align-self: end;
@@ -3237,20 +3262,20 @@ td strong {
   min-width: 0;
   width: 100%;
   height: 42px;
-  border: 1px solid #d4dde5;
+  border: 1px solid #D5E5DC;
   border-radius: 6px;
-  background: #f9fbfc;
+  background: transparent;
   padding: 0 8px;
   color: #1f3545;
   outline: none;
 }
 .bank-branch-time-controls input:focus {
   border-color: #177e7a;
-  box-shadow: 0 0 0 3px rgba(23, 126, 122, 0.1);
+  box-shadow: none;
 }
 .bank-branch-time-controls input[aria-invalid="true"] {
   border-color: #cf6262;
-  background: #fffafa;
+  background: transparent;
 }
 .bank-branch-time-separator {
   align-self: end;
@@ -3286,7 +3311,7 @@ td strong {
   gap: 3px;
 }
 .bank-branch-contact input:first-child {
-  background: #edf3f5;
+  background: transparent;
 }
 .bank-branch-actions {
   display: flex;
@@ -3329,6 +3354,10 @@ td strong {
   padding: 11px 13px;
   border-radius: 6px;
   font-size: 12px;
+  width: min(100%, 1320px);
+  box-sizing: border-box;
+  margin-right: auto;
+  margin-left: auto;
 }
 .bank-branch-alert {
   border: 1px solid #f0cccc;
@@ -3340,6 +3369,11 @@ td strong {
   background: #f1fbf5;
   color: #25613d;
 }
+@media (max-width: 980px) {
+  .bank-branch-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
 @media (max-width: 850px) {
   .bank-branch-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3348,6 +3382,9 @@ td strong {
 @media (max-width: 600px) {
   .bank-branch-page {
     padding: 0 14px 28px;
+  }
+  .bank-branch-heading {
+    align-items: flex-start;
   }
   .bank-branch-section {
     padding: 18px 16px 20px;
