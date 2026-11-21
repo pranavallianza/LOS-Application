@@ -6728,13 +6728,15 @@ td strong {
 @media(prefers-reduced-motion:reduce){.header-page-search-control,.header-page-search-result,.header-page-search-chevron{transition:none}.header-page-search-results{animation:none}}
 
 .bank-master-page {
-  width: min(100%, 1280px);
-  padding: 0 18px 32px;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 clamp(12px, 2vw, 24px) 32px;
 }
 .bank-master-page .page-header {
   max-width: 1160px;
-  margin-right: auto;
-  margin-left: auto;
+  align-items: flex-start;
+  margin: 0 auto 24px;
 }
 .bank-master-card {
   max-width: 1160px;
@@ -6966,6 +6968,94 @@ td strong {
   .bank-master-account-pagination > div {
     width: 100%;
     justify-content: space-between;
+  }
+}
+
+.bank-master-local-mode {
+  max-width: 1160px;
+  margin: 0 auto 14px;
+  padding: 11px 14px;
+  border: 1px solid #d5e5e1;
+  border-radius: 8px;
+  background: #f5faf8;
+  color: #496a66;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.bank-master-account-entry {
+  margin-bottom: 20px;
+  padding: 18px;
+  border: 1px solid #dce7e3;
+  border-radius: 9px;
+  background: #fbfdfc;
+}
+.bank-master-account-entry h4 {
+  margin: 0 0 16px;
+  color: #315250;
+  font-size: 12px;
+  font-weight: 800;
+}
+.bank-master-account-entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.bank-master-account-entry > .bank-master-field-error {
+  margin-top: 8px;
+}
+.bank-master-account-cancel-edit,
+.bank-master-account-actions button {
+  color: #176d67;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+.bank-master-account-table-wrap {
+  overflow: auto;
+  border: 1px solid #dce7e3;
+  border-radius: 8px;
+}
+.bank-master-account-table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  background: #fff;
+}
+.bank-master-account-table th,
+.bank-master-account-table td {
+  padding: 11px 12px;
+  border-bottom: 1px solid #e8efed;
+  text-align: left;
+  font-size: 11px;
+}
+.bank-master-account-table th {
+  background: #f3f7f6;
+  color: #52696b;
+  font-size: 10px;
+  font-weight: 800;
+}
+.bank-master-account-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.bank-master-account-actions {
+  display: flex;
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .bank-master-page .page-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .bank-master-local-mode {
+    margin-bottom: 12px;
+  }
+  .bank-master-account-entry {
+    padding: 14px;
+  }
+  .bank-master-account-entry-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
