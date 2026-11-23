@@ -118,6 +118,11 @@ const NAV = [
         icon: Building2,
         href: "/bank_branch",
       },
+      {
+        label: "Bank branch list",
+        icon: Building2,
+        href: "/bank_branch_list",
+      },
     ],
   },
   {
