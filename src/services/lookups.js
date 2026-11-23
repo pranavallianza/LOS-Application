@@ -3,7 +3,7 @@ const API_BASE_URL = (
 ).replace(/\/+$/, "");
 const API_V1_URL = /\/api\/v\d+$/i.test(API_BASE_URL)
   ? API_BASE_URL
-  : `${API_BASE_URL}/api/v1`;
+  : `${API_BASE_URL}/api`;
 
 function getRequestHeaders() {
   const storedAuthData = window.localStorage.getItem("authData");
@@ -54,14 +54,39 @@ function toDisplayStatus(status, isActive = true) {
   return active ? "Active" : "Inactive";
 }
 
+// export async function getLookupTypes(signal) {
+//   const result = await requestLookupApi("/api/lookups?search=&status=ALL", {
+//     method: "GET",
+//     signal,
+//   });
+//   if (!Array.isArray(result?.data)) {
+//     throw new Error("The lookup service returned an unsupported lookup list.");
+//   }
+//   return result.data.map((lookup) => ({
+//     id: lookup.id ?? lookup.code,
+//     code: lookup.code ?? "",
+//     name: lookup.name ?? "",
+//     description: lookup.description ?? "",
+//     status: toDisplayStatus(lookup.status, lookup.isActive),
+//     isFixed: Boolean(lookup.isFixed),
+//     subLookups: [],
+//   }));
+// }
+
 export async function getLookupTypes(signal) {
-  const result = await requestLookupApi("/administration/lookups/types", {
+  const result = await requestLookupApi("/lookups", {
     method: "GET",
+    params: {
+      search: "",
+      status: "ALL",
+    },
     signal,
   });
+
   if (!Array.isArray(result?.data)) {
     throw new Error("The lookup service returned an unsupported lookup list.");
   }
+
   return result.data.map((lookup) => ({
     id: lookup.id ?? lookup.code,
     code: lookup.code ?? "",
@@ -75,7 +100,7 @@ export async function getLookupTypes(signal) {
 
 export async function getLookupOptions(lookupTypeCode, signal) {
   const result = await requestLookupApi(
-    `/administration/lookups/${encodeURIComponent(lookupTypeCode)}/options`,
+    `/lookups/${encodeURIComponent(lookupTypeCode)}/sub-lookups`,
     { method: "GET", signal },
   );
   if (!Array.isArray(result?.data)) {
@@ -89,20 +114,28 @@ export async function getLookupOptions(lookupTypeCode, signal) {
       name,
       description: option.description ?? "",
       status: toDisplayStatus(option.status, option.isActive),
+      displayOrder: option.display_order ?? option.displayOrder ?? index + 1,
     };
   });
 }
 
 export async function createLookupType(lookupType) {
-  return requestLookupApi("/administration/lookups/types", {
+  return requestLookupApi("/lookups", {
     method: "POST",
+    body: JSON.stringify(lookupType),
+  });
+}
+
+export async function updateLookupType(lookupId, lookupType) {
+  return requestLookupApi(`/lookups/${encodeURIComponent(lookupId)}`, {
+    method: "PUT",
     body: JSON.stringify(lookupType),
   });
 }
 
 export async function createLookupSubType(lookupTypeCode, subType) {
   return requestLookupApi(
-    `/administration/lookups/types/${encodeURIComponent(lookupTypeCode)}/sub-types`,
+    `/lookups/${encodeURIComponent(lookupTypeCode)}/sub-lookups`,
     {
       method: "POST",
       body: JSON.stringify(subType),
@@ -110,19 +143,29 @@ export async function createLookupSubType(lookupTypeCode, subType) {
   );
 }
 
+export async function updateLookupSubType(subLookupId, subType) {
+  return requestLookupApi(`/sub-lookups/${encodeURIComponent(subLookupId)}`, {
+    method: "PUT",
+    body: JSON.stringify(subType),
+  });
+}
+
 export async function setLookupTypeActive(lookupType, active) {
-  const action = active ? "activate" : "deactivate";
   return requestLookupApi(
-    `/administration/lookups/types/${encodeURIComponent(lookupType.code)}/${action}`,
-    { method: "PATCH" },
+    `/lookups/${encodeURIComponent(lookupType.id ?? lookupType.code)}/status`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: active ? "Active" : "Inactive" }),
+    },
   );
 }
 
 export async function setLookupSubTypeActive(subTypeId, active) {
-  console.log("setLookupSubTypeActive", subTypeId, active);
-  const action = active ? "activate" : "deactivate";
   return requestLookupApi(
-    `/administration/lookups/sub-types/${encodeURIComponent(subTypeId)}/${action}`,
-    { method: "PATCH" },
+    `/sub-lookups/${encodeURIComponent(subTypeId)}/status`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status: active ? "Active" : "Inactive" }),
+    },
   );
 }

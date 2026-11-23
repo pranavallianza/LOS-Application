@@ -30,7 +30,8 @@ import PageHeader from '../../components/PageHeader';
 import Card from '../../components/Card';
 import { PermissionGate } from '../../components/AccessControl';
 import { api } from '../../services/api.js';
-import { getLeads, getUsers } from '../../services/leadService';
+import { getLeads } from '../../services/localLeads';
+import { getUsers } from '../../services/leadService';
 
 const USERS_PER_PAGE = 5;
 
@@ -225,6 +226,8 @@ export default function UserManagementPage() {
   return (
 
     <AppShell title="User Management">
+
+      <div className="user-management-page">
 
       <div style={{ marginTop: '-15px', marginBottom: '26px' }}>
         <h1 style={{ margin: 0, color: '#23474C', font: '700 23px Manrope' }}>
@@ -907,6 +910,8 @@ export default function UserManagementPage() {
         </footer>
 
       </Card>
+
+      </div>
 
     </AppShell>
 

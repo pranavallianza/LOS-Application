@@ -8,7 +8,16 @@ import PageHeader from '../../components/PageHeader';
 import NewLead from '../../components/NewLead';
 import CorporateLeadWizard from '../../components/CorporateLeadWizard';
 import LeadDetails from '../../components/LeadDetails';
-import { getLeads, saveLeads } from '../../services/leadService';
+import { getLeads, saveLeads } from '../../services/localLeads';
+import {
+  assignRetailLead,
+  createRetailLead,
+  getAllRetailLeads,
+  getRetailLead,
+  getRetailLeads,
+  getRetailLookups,
+  updateRetailLead,
+} from '../../services/retail_lead_management';
 
 const leadTableColumns = [
     ['srNo', 'Sr. No.'],
@@ -200,7 +209,8 @@ const normalizeLeadRecord = (lead) => {
 };
 
 const leadManagementStyles = `
-.lm-page{max-width:1480px;margin:0 auto;padding:4px 0 28px;color:#20383a;font-family:var(--font-sans,inherit)}
+.los-page-wrap{width:100%;max-width:none;padding-right:24px;padding-left:24px;box-sizing:border-box}
+.lm-page{display:block;width:100%;max-width:none;margin:0;padding:4px 0 28px;box-sizing:border-box;color:#20383a;font-family:var(--font-sans,inherit)}
 .lm-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:19px}
 .lm-page-header.page-header{margin-bottom:19px}
 .lm-heading-copy span{color:#748789;font-size:10px;font-weight:800;letter-spacing:.1em}
@@ -310,7 +320,12 @@ const leadNoticeStyles = `
 
 export function LeadManagementPage({ corporate = false }) {
   const [leads, setLeads] = useState([]);
+  const [totalLeadCount, setTotalLeadCount] = useState(0);
   const [isLoadingLeads, setIsLoadingLeads] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadVersion, setLoadVersion] = useState(0);
+  const [leadStatusOptions, setLeadStatusOptions] = useState([]);
+  const [lookupError, setLookupError] = useState('');
   const [showNewLead, setShowNewLead] = useState(false);
   const [editingCorporateLead, setEditingCorporateLead] = useState(null);
   const [showBulkImport, setShowBulkImport] = useState(false);
@@ -371,35 +386,78 @@ export function LeadManagementPage({ corporate = false }) {
   }, []);
 
   useEffect(() => {
+    let isCurrent = true;
     setIsLoadingLeads(true);
-    setLeads(getLeads().map(normalizeLeadRecord));
-    setIsLoadingLeads(false);
+    setLoadError('');
+
+    const request = corporate
+      ? Promise.resolve(getLeads())
+        .then((records) => ({ items: records, totalElements: records.length }))
+      : (fromDate || toDate
+        ? getAllRetailLeads({
+          status: statusFilter === 'All' ? '' : statusFilter,
+          search: searchQuery,
+        })
+        : getRetailLeads({
+          page: currentPage - 1,
+          size: LEADS_PER_PAGE,
+          status: statusFilter === 'All' ? '' : statusFilter,
+          search: searchQuery,
+        }));
+
+    request
+      .then(({ items, totalElements }) => {
+        if (!isCurrent) return;
+        setLeads(items.map(normalizeLeadRecord));
+        setTotalLeadCount(totalElements);
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setLoadError(error instanceof Error ? error.message : 'Unable to load leads.');
+        }
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoadingLeads(false);
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [corporate, currentPage, statusFilter, searchQuery, fromDate, toDate, loadVersion]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    getRetailLookups()
+      .then((lookups) => {
+        if (!isCurrent) return;
+        const statusLookupNames = ['Lead Status', 'Lead Statuses', 'Status'];
+        const statusLookup = lookups.find((lookup) => statusLookupNames.some(
+          (name) => String(lookup.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+            === name.toLowerCase().replace(/[^a-z0-9]/g, ''),
+        ));
+        setLeadStatusOptions((statusLookup?.subLookups || [])
+          .slice()
+          .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0)));
+        setLookupError('');
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setLookupError(error instanceof Error ? error.message : 'Unable to load lookup values.');
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
   }, []);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [searchQuery, statusFilter, fromDate, toDate]);
 
-  const handleCreateLead = (form) => {
-    const nextId = Math.max(...leads.map((lead) => Number(String(lead.id).replace(/\D/g, ''))), 0) + 1;
-    const today = new Date();
-    const date = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`;
-    const leadId = `LD${String(nextId).padStart(6, '0')}`;
-    const newLead = normalizeLeadRecord({
-      ...form,
-      id: leadId,
-      leadId,
-      name: form.customerName,
-      mobile: form.mobileNumber,
-      date,
-      status: 'New',
-      branch: form.branch || '',
-      product: form.loanProductType,
-      amount: Number(form.loanAmount).toLocaleString('en-IN'),
-      remarks: '',
-    });
-    setLeads(saveLeads([newLead, ...leads]));
-    showNotice('success', 'Lead saved on this device.');
+  const handleCreateLead = async (form) => {
+    await createRetailLead(form);
+    setLoadVersion((version) => version + 1);
+    showNotice('success', 'Lead created successfully.');
   };
 
   const handleCorporateSaved = (form) => {
@@ -423,23 +481,9 @@ export function LeadManagementPage({ corporate = false }) {
       throw new Error('The lead ID is missing.');
     }
 
-    const nextLeads = leads.map((lead) => {
-      if (lead.id !== editingLead.id) return lead;
-
-      return normalizeLeadRecord({
-        ...lead,
-        ...form,
-        id: lead.id,
-        leadId: lead.id,
-        name: form.customerName,
-        customerName: form.customerName,
-        mobile: form.mobileNumber,
-        product: form.loanProductType,
-        amount: Number(form.loanAmount).toLocaleString('en-IN'),
-      });
-    });
-    setLeads(saveLeads(nextLeads));
-    showNotice('success', 'Lead changes saved on this device.');
+    await updateRetailLead(editingLead.id, form);
+    setLoadVersion((version) => version + 1);
+    showNotice('success', 'Lead changes saved successfully.');
     setEditingLead(null);
   };
 
@@ -455,21 +499,49 @@ export function LeadManagementPage({ corporate = false }) {
 
     setIsAssigning(true);
     try {
-      const nextLeads = leads.map((lead) => {
-        if (lead.id !== assignmentLead.id) return lead;
-        return normalizeLeadRecord({
-          ...lead,
-          assignedToId: assigneeId.trim(),
-          assignedToName: assigneeName.trim(),
+      if (corporate) {
+        const nextLeads = leads.map((lead) => (
+          lead.id === assignmentLead.id
+            ? normalizeLeadRecord({
+              ...lead,
+              assignedToId: assigneeId.trim(),
+              assignedToName: assigneeName.trim(),
+            })
+            : lead
+        ));
+        setLeads(saveLeads(nextLeads));
+      } else {
+        await assignRetailLead(assignmentLead.id, {
+          employeeId: assigneeId.trim(),
+          employeeName: assigneeName.trim(),
         });
-      });
-      setLeads(saveLeads(nextLeads));
-      showNotice('success', 'Lead assignment saved on this device.');
+        setLoadVersion((version) => version + 1);
+      }
+      showNotice('success', corporate ? 'Lead assignment saved on this device.' : 'Lead assigned successfully.');
       setAssignmentLead(null);
     } catch (error) {
       showNotice('error', error instanceof Error ? error.message : 'Unable to assign this lead.');
     } finally {
       setIsAssigning(false);
+    }
+  };
+
+  const handleRetryLoad = () => {
+    setLoadVersion((version) => version + 1);
+    if (lookupError) {
+      getRetailLookups()
+        .then((lookups) => {
+          const statusLookup = lookups.find((lookup) => ['Lead Status', 'Lead Statuses', 'Status']
+            .some((name) => String(lookup.name || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+              === name.toLowerCase().replace(/[^a-z0-9]/g, '')));
+          setLeadStatusOptions((statusLookup?.subLookups || [])
+            .slice()
+            .sort((left, right) => (left.displayOrder ?? 0) - (right.displayOrder ?? 0)));
+          setLookupError('');
+        })
+        .catch((error) => {
+          setLookupError(error instanceof Error ? error.message : 'Unable to load lookup values.');
+        });
     }
   };
 
@@ -497,12 +569,14 @@ export function LeadManagementPage({ corporate = false }) {
     try {
       if (mode === 'all') {
         if (isLoadingLeads) throw new Error('Wait for leads to finish loading, then try again.');
-        if (!activeLeads.length) throw new Error(`There are no ${corporate ? 'corporate ' : ''}leads to export.`);
-        const csv = `\uFEFF${leadsToCsv(activeLeads)}`;
+        const exportLeads = corporate ? activeLeads : (await getAllRetailLeads()).items;
+        if (!exportLeads.length) throw new Error(`There are no ${corporate ? 'corporate ' : ''}leads to export.`);
+        const csv = `\uFEFF${leadsToCsv(exportLeads)}`;
         downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), corporate ? 'corporate-leads.csv' : 'leads.csv');
       } else {
         if (isLoadingLeads) throw new Error('Wait for the leads to finish loading, then try again.');
-        const matchingLeads = activeLeads.filter((lead) => {
+        const exportLeads = corporate ? activeLeads : (await getAllRetailLeads()).items;
+        const matchingLeads = exportLeads.filter((lead) => {
           const leadDate = toIsoDate(lead.date || lead.leadDate || lead.createdAt);
           return leadDate && leadDate >= exportFromDate && leadDate <= exportToDate;
         });
@@ -593,14 +667,33 @@ export function LeadManagementPage({ corporate = false }) {
     }
   };
 
-  const loadLeadDetails = (lead) => {
-    setSelectedLead(lead);
-    return lead;
+  const loadLeadDetails = async (lead) => {
+    if (corporate) {
+      setSelectedLead(lead);
+      return;
+    }
+
+    try {
+      const details = await getRetailLead(lead.id);
+      setSelectedLead(normalizeLeadRecord({ ...lead, ...(details || {}) }));
+    } catch (error) {
+      showNotice('error', error instanceof Error ? error.message : 'Unable to load lead details.');
+    }
   };
 
-  const openLeadEditor = (lead) => {
+  const openLeadEditor = async (lead) => {
     setSelectedLead(null);
-    setEditingLead(lead);
+    if (corporate) {
+      setEditingCorporateLead(lead);
+      return;
+    }
+
+    try {
+      const details = await getRetailLead(lead.id);
+      setEditingLead(normalizeLeadRecord({ ...lead, ...(details || {}) }));
+    } catch (error) {
+      showNotice('error', error instanceof Error ? error.message : 'Unable to load lead details.');
+    }
   };
 
   const handleSearch = () => {
@@ -622,7 +715,10 @@ export function LeadManagementPage({ corporate = false }) {
   const activeLeads = corporate ? leads.filter((lead) => isCorporateLead(lead)) : leads;
   const filteredLeads = activeLeads.filter((lead) => {
     const leadStatus = lead.status === 'Pending' ? 'New' : lead.status || 'New';
-    const statusMatches = statusFilter === 'All' || leadStatus === statusFilter;
+    const statusMatches = statusFilter === 'All'
+      || leadStatus === statusFilter
+      || lead.status === statusFilter
+      || lead.leadStatus === statusFilter;
     const leadDate = toIsoDate(leadFieldValue(lead, 'date'));
     const fromMatches = !fromDate || Boolean(leadDate && leadDate >= fromDate);
     const toMatches = !toDate || Boolean(leadDate && leadDate <= toDate);
@@ -632,11 +728,14 @@ export function LeadManagementPage({ corporate = false }) {
     const searchMatches = !searchQuery || fieldValues.some((value) => String(value ?? '').toLowerCase().includes(searchQuery));
     return statusMatches && fromMatches && toMatches && searchMatches;
   });
-  const pageCount = Math.max(1, Math.ceil(filteredLeads.length / LEADS_PER_PAGE));
+  const displayedLeadCount = !corporate && !fromDate && !toDate ? totalLeadCount : filteredLeads.length;
+  const pageCount = Math.max(1, Math.ceil(displayedLeadCount / LEADS_PER_PAGE));
   const visiblePage = Math.min(currentPage, pageCount);
-  const pageStart = filteredLeads.length ? (visiblePage - 1) * LEADS_PER_PAGE : 0;
-  const paginatedLeads = filteredLeads.slice(pageStart, pageStart + LEADS_PER_PAGE);
-  const pageEnd = Math.min(pageStart + LEADS_PER_PAGE, filteredLeads.length);
+  const pageStart = displayedLeadCount ? (visiblePage - 1) * LEADS_PER_PAGE : 0;
+  const paginatedLeads = corporate || fromDate || toDate
+    ? filteredLeads.slice(pageStart, pageStart + LEADS_PER_PAGE)
+    : filteredLeads;
+  const pageEnd = Math.min(pageStart + paginatedLeads.length, displayedLeadCount);
   const tableColumns = corporate
     ? [['srNo', 'Sr. No.'], ['id', 'Lead ID'], ['entityName', 'Entity Name'], ['registrationNo', 'Registration No.'], ['assignedToName', 'Assigned To'], ['status', 'Status'], ['date', 'Lead Date']]
     : leadTableColumns;
@@ -678,14 +777,24 @@ export function LeadManagementPage({ corporate = false }) {
             }
           />
 
+          {(loadError || lookupError) ? (
+            <div className="lm-load-error" role="alert">
+              <span>{loadError || lookupError}</span>
+              <button type="button" onClick={handleRetryLoad}>Retry</button>
+            </div>
+          ) : null}
+
           <section className="lm-toolbar" aria-label="Lead filters">
             <label className="lm-filter lm-filter-search" htmlFor="lead-search-text">Search leads
               <span className="lm-search-box"><Search size={15} aria-hidden="true" /><input id="lead-search-text" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleSearch(); }} onBlur={handleSearch} placeholder="Lead ID, name, mobile or assignee" /></span>
             </label>
             <label className="lm-filter" htmlFor="lead-status-filter">Status
               <select id="lead-status-filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                <option value="All">All statuses</option>
-                {['New', 'In Progress', 'Contacted', 'Qualified', 'On Hold', 'Rejected', 'Converted'].map((status) => <option key={status} value={status}>{status}</option>)}
+                <option value="All">All Status</option>
+                {leadStatusOptions.map((status, index) => {
+                  const name = status.name || status.description || status.code || '';
+                  return name ? <option key={status.id ?? status.code ?? index} value={name}>{name}</option> : null;
+                })}
               </select>
             </label>
             <label className="lm-filter" htmlFor="lead-from-date">Lead date from
@@ -753,7 +862,7 @@ export function LeadManagementPage({ corporate = false }) {
           </section>
 
           <section className="lm-results" aria-label="Lead records">
-            <div className="lm-results-meta"><strong>{filteredLeads.length} {filteredLeads.length === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, customer name, mobile number, and assignee.'}</span></div>
+            <div className="lm-results-meta"><strong>{displayedLeadCount} {displayedLeadCount === 1 ? 'lead' : 'leads'}</strong><span>{corporate ? 'Search covers lead ID, entity name, registration number, and assignee.' : 'Search covers lead ID, customer name, mobile number, and assignee.'}</span></div>
             <div className="lm-table-wrap">
               <table className="lm-table">
                 <thead><tr>{tableColumns.map(([, label]) => <th key={label}>{label}</th>)}<th>Actions</th></tr></thead>
@@ -836,7 +945,7 @@ export function LeadManagementPage({ corporate = false }) {
               }}>
                 <FileSpreadsheet size={18} />
                 <strong>Export All</strong>
-                <span>Download all leads saved on this device.</span>
+                <span>{corporate ? 'Download all corporate leads saved on this device.' : 'Download all retail leads from the service.'}</span>
               </button>
               <button type="button" className={`lm-export-option${exportMode === 'date' ? ' selected' : ''}`} disabled={isExporting} onClick={() => {
                 setExportMode('date');
@@ -926,11 +1035,11 @@ export function LeadManagementPage({ corporate = false }) {
               <input id="lead-assignee-name" value={assigneeName} onChange={(event) => setAssigneeName(event.target.value)} required disabled={isAssigning} />
             </label>
             <label htmlFor="lead-assignee-id">Employee ID
-              <input id="lead-assignee-id" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} disabled={isAssigning} />
+              <input id="lead-assignee-id" value={assigneeId} onChange={(event) => setAssigneeId(event.target.value)} required disabled={isAssigning} />
             </label>
             <div className="lm-assignment-actions">
               <button type="button" onClick={() => setAssignmentLead(null)} disabled={isAssigning}>Cancel</button>
-              <button type="submit" disabled={isAssigning || !assigneeName.trim()}>{isAssigning ? 'Saving...' : 'Assign'}</button>
+              <button type="submit" disabled={isAssigning || !assigneeName.trim() || !assigneeId.trim()}>{isAssigning ? 'Saving...' : 'Assign'}</button>
             </div>
           </form>
         </div>

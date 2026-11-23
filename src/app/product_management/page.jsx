@@ -293,6 +293,15 @@ export default function ProductManagementPage() {
         .pm-table{min-width:940px}
         @media(max-width:700px){.pm-dialog{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.pm-form{padding:20px}.pm-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.pm-name,.pm-wide,.pm-grid .pm-long-field{grid-column:span 2}.pm-dop{padding:14px}.pm-dop-view{margin:0 14px 14px}}
         @media(max-width:480px){.pm-form{padding:17px}.pm-grid{grid-template-columns:1fr;gap:15px}.pm-name,.pm-wide,.pm-grid .pm-long-field{grid-column:auto}.pm-tenure-control{grid-template-columns:minmax(0,1fr) 104px}.pm-dop-heading{align-items:flex-start;flex-direction:column}.pm-dop-add{width:100%}}
+        .pm-form{padding:32px 52px}
+        .pm-field input,.pm-field select,.pm-dop-table input{border-color:#C6DACF;background:#fff}
+        .pm-field input:focus,.pm-field select:focus,.pm-dop-table input:focus{border-color:#177e7a;box-shadow:none}
+        .pm-view-body{min-height:0;overflow-y:auto}
+        .pm-detail{gap:12px;padding:18px 21px}
+        .pm-detail-item{min-width:0;padding:14px;border:1px solid #dce6e3;border-radius:6px;background:#fff}
+        .pm-dop-view{box-sizing:border-box;width:min(720px,calc(100% - 42px))}
+        .pm-dop-view .pm-dop-table th:last-child,.pm-dop-view .pm-dop-table td:last-child{width:auto;text-align:left;overflow-wrap:anywhere}
+        @media(max-width:700px){.pm-dop-view{width:calc(100% - 28px)}}
       `}</style>
       <main className="pm-wrap">
         <PageHeader title="Product  Master" description="Set effective-dated interest tiers by loan product and tenure." marquee />
@@ -342,7 +351,7 @@ export default function ProductManagementPage() {
       {dialog?.type === 'form' && (
         <div className="pm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setDialog(null); }}>
           <section className="pm-dialog" role="dialog" aria-modal="true" aria-labelledby="pm-dialog-title">
-            <header className="pm-dialog-head"><div><h2 id="pm-dialog-title">{dialog.product ? 'Edit product' : 'Add new product'}</h2><p>Set the product details and repayment terms.</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} disabled={saving} aria-label="Close form"><X size={18} /></button></header>
+            <header className="pm-dialog-head"><div><h2 id="pm-dialog-title">{dialog.product ? 'Edit product' : 'Add new product'}</h2></div><button type="button" className="pm-close" onClick={() => setDialog(null)} disabled={saving} aria-label="Close form"><X size={18} /></button></header>
             {status?.type === 'error' && <div className="pm-status error" role="alert">{status.text}</div>}
             <form className="pm-form" onSubmit={submit} noValidate>
               <div className="pm-grid">
@@ -423,29 +432,31 @@ export default function ProductManagementPage() {
         <div className="pm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
           <section className="pm-dialog" role="dialog" aria-modal="true" aria-labelledby="pm-view-title">
             <header className="pm-dialog-head"><div><h2 id="pm-view-title">{dialog.product.productName}</h2><p>Product details</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} aria-label="Close product details"><X size={18} /></button></header>
-            <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || normalizeYesNo(dialog.product.penalty) === 'Yes').map(([field, label]) => {
-              const value = field === 'penalty' ? normalizeYesNo(dialog.product[field])
-                : field === 'emi' ? normalizeEmiTiming(dialog.product[field])
-                : field === 'minTenure' ? formatTenure(dialog.product.minTenure, dialog.product.minTenureUnit)
-                  : field === 'maxTenure' ? formatTenure(dialog.product.maxTenure, dialog.product.maxTenureUnit)
-                    : field === 'penaltyPercent' ? `${dialog.product[field] || '—'}%`
-                      : dialog.product[field] || '—';
-              return <div className="pm-detail-item" key={field}><span>{label}</span><strong>{value || '—'}</strong></div>;
-            })}</div>
-            <section className="pm-dop pm-dop-view" aria-labelledby="pm-dop-view-title">
-              <h3 id="pm-dop-view-title">Delegation of Power for Sanction</h3>
-              <div className="pm-dop-table-wrap">
-                <table className="pm-dop-table">
-                  <thead><tr><th scope="col">Sr.</th><th scope="col">Limit (₹)</th><th scope="col">Power / Approving Designation</th></tr></thead>
-                  <tbody>
-                    {(Array.isArray(dialog.product.delegationPower) ? dialog.product.delegationPower : []).map((row, index) => (
-                      <tr key={row.id ?? index}><td>{index + 1}</td><td>{row.limit === '' || row.limit == null ? '—' : `₹${Number(row.limit).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td><td>{row.power || '—'}</td></tr>
-                    ))}
-                    {(!Array.isArray(dialog.product.delegationPower) || dialog.product.delegationPower.length === 0) && <tr><td colSpan="3">No sanction authority configured.</td></tr>}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            <div className="pm-view-body">
+              <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || normalizeYesNo(dialog.product.penalty) === 'Yes').map(([field, label]) => {
+                const value = field === 'penalty' ? normalizeYesNo(dialog.product[field])
+                  : field === 'emi' ? normalizeEmiTiming(dialog.product[field])
+                  : field === 'minTenure' ? formatTenure(dialog.product.minTenure, dialog.product.minTenureUnit)
+                    : field === 'maxTenure' ? formatTenure(dialog.product.maxTenure, dialog.product.maxTenureUnit)
+                      : field === 'penaltyPercent' ? `${dialog.product[field] || '—'}%`
+                        : dialog.product[field] || '—';
+                return <div className="pm-detail-item" key={field}><span>{label}</span><strong>{value || '—'}</strong></div>;
+              })}</div>
+              <section className="pm-dop pm-dop-view" aria-labelledby="pm-dop-view-title">
+                <h3 id="pm-dop-view-title">Delegation of Power for Sanction</h3>
+                <div className="pm-dop-table-wrap">
+                  <table className="pm-dop-table">
+                    <thead><tr><th scope="col">Sr.</th><th scope="col">Limit (₹)</th><th scope="col">Power / Approving Designation</th></tr></thead>
+                    <tbody>
+                      {(Array.isArray(dialog.product.delegationPower) ? dialog.product.delegationPower : []).map((row, index) => (
+                        <tr key={row.id ?? index}><td>{index + 1}</td><td>{row.limit === '' || row.limit == null ? '—' : `₹${Number(row.limit).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}</td><td>{row.power || '—'}</td></tr>
+                      ))}
+                      {(!Array.isArray(dialog.product.delegationPower) || dialog.product.delegationPower.length === 0) && <tr><td colSpan="3">No sanction authority configured.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
             <footer className="pm-dialog-actions"><button className="pm-btn" type="button" onClick={() => setDialog(null)}>Close</button></footer>
           </section>
         </div>

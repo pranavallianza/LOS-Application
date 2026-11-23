@@ -1,5 +1,3 @@
-const STORAGE_KEY = 'los_lead_records';
-
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_URL
 ).replace(/\/+$/, '');
@@ -159,30 +157,3 @@ export async function createUser(user) {
   );
 }
 
-export function getLeads() {
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-     
-    }
-  }
-
-  return [];
-}
-
-export function saveLeads(leads) {
-  if (typeof window !== 'undefined') {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(leads));
-    } catch {
-      // Keep the current in-memory lead list available when browser storage is unavailable.
-    }
-  }
-
-  return leads;
-}

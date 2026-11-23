@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { CalendarDays } from 'lucide-react';
 import Calendar from 'react-calendar';
 
@@ -55,27 +56,113 @@ export default function LeadDatePicker({
   invalid = false,
   emptyLabel = 'Select date',
   triggerStyle,
+  popupPlacement = 'below',
 }) {
   const containerRef = useRef(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState(null);
+  const useViewportPopover =
+    className.includes('document-expiry-date-picker') ||
+    className.includes('previous-employment-date-picker') ||
+    className.includes('loan-history-date-picker');
   const selectedDate = toCalendarDate(value);
 
   useEffect(() => {
     if (!isOpen) return undefined;
 
     const handleOutsidePointerDown = (event) => {
-      if (!containerRef.current?.contains(event.target)) setIsOpen(false);
+      if (
+        !containerRef.current?.contains(event.target) &&
+        !popoverRef.current?.contains(event.target)
+      ) setIsOpen(false);
     };
 
     document.addEventListener('pointerdown', handleOutsidePointerDown);
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !useViewportPopover) return undefined;
+
+    const scrollContainer = containerRef.current?.closest('.los-main-content');
+    if (!scrollContainer) return undefined;
+
+    const previousOverflowY = scrollContainer.style.overflowY;
+    scrollContainer.style.overflowY = 'hidden';
+    return () => {
+      scrollContainer.style.overflowY = previousOverflowY;
+    };
+  }, [isOpen, useViewportPopover]);
+
   const handleDateChange = (date) => {
     if (!(date instanceof Date)) return;
     onChange(toInputDate(date));
     setIsOpen(false);
   };
+
+  const toggleCalendar = () => {
+    if (isOpen) {
+      setIsOpen(false);
+      return;
+    }
+
+    if (useViewportPopover) {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const width = Math.min(350, window.innerWidth - 32);
+        const estimatedHeight = 400;
+        const gap = 8;
+        const hasRoomOnRight = window.innerWidth - rect.right >= width + gap + 16;
+        const left = hasRoomOnRight
+          ? rect.right + gap
+          : Math.max(16, rect.left - width - gap);
+        const top = Math.max(
+          16,
+          Math.min(rect.top, window.innerHeight - estimatedHeight - 16)
+        );
+        setPopoverPosition({
+          position: 'fixed',
+          left,
+          top,
+          width,
+          maxHeight: 'calc(100vh - 32px)',
+          overflowY: 'auto',
+          overscrollBehavior: 'contain',
+          zIndex: 1000,
+        });
+      }
+    }
+
+    setIsOpen(true);
+  };
+
+  const calendarPopover = isOpen ? (
+    <div
+      ref={popoverRef}
+      className="dob-calendar-popover"
+      role="dialog"
+      aria-label={`Choose ${label}`}
+      style={useViewportPopover ? popoverPosition || undefined : undefined}
+    >
+      <Calendar
+        className="loan-birth-calendar"
+        value={selectedDate}
+        minDate={toCalendarDate(min) || undefined}
+        maxDate={toCalendarDate(max) || undefined}
+        defaultActiveStartDate={selectedDate || toCalendarDate(calendarStartDate) || toCalendarDate(min) || toCalendarDate(max) || new Date()}
+        onChange={handleDateChange}
+        locale="en-IN"
+      />
+      {value && !required ? (
+        <button type="button" className="lead-date-picker-clear" onClick={() => {
+          onChange('');
+          setIsOpen(false);
+        }}>Clear date</button>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
     <>
@@ -93,31 +180,16 @@ export default function LeadDatePicker({
           aria-invalid={invalid || undefined}
           data-date-picker-trigger={name}
           disabled={disabled}
+          ref={triggerRef}
           style={triggerStyle}
-          onClick={() => setIsOpen((open) => !open)}
+          onClick={toggleCalendar}
         >
           <span className={value ? '' : 'dob-picker-placeholder'}>{formatDate(value, emptyLabel)}</span>
           <CalendarDays size={16} aria-hidden="true" />
         </button>
-        {isOpen ? (
-          <div className="dob-calendar-popover" role="dialog" aria-label={`Choose ${label}`}>
-            <Calendar
-              className="loan-birth-calendar"
-              value={selectedDate}
-              minDate={toCalendarDate(min) || undefined}
-              maxDate={toCalendarDate(max) || undefined}
-              defaultActiveStartDate={selectedDate || toCalendarDate(calendarStartDate) || toCalendarDate(min) || toCalendarDate(max) || new Date()}
-              onChange={handleDateChange}
-              locale="en-IN"
-            />
-            {value && !required ? (
-              <button type="button" className="lead-date-picker-clear" onClick={() => {
-                onChange('');
-                setIsOpen(false);
-              }}>Clear date</button>
-            ) : null}
-          </div>
-        ) : null}
+        {useViewportPopover && calendarPopover && typeof document !== 'undefined'
+          ? createPortal(calendarPopover, document.body)
+          : calendarPopover}
       </div>
     </>
   );

@@ -21,6 +21,8 @@ import {
   getLookupTypes,
   setLookupSubTypeActive,
   setLookupTypeActive,
+  updateLookupSubType,
+  updateLookupType,
 } from "../../services/lookups";
 import "./lookup-management.css";
 
@@ -156,12 +158,24 @@ export default function LookupManagementPage() {
   }
 
   function startEditSubLookup(lookup, subLookup) {
+    const subLookupCode = String(subLookup.code ?? "");
+    const lookupCode = String(lookup.code ?? "");
     setActiveTab("sub");
-    setEditing({ type: "sub", id: subLookup.id, parentId: lookup.id });
+    setEditing({
+      type: "sub",
+      id: subLookup.id,
+      parentId: lookup.id,
+      displayOrder:
+        subLookup.displayOrder ??
+        subLookup.display_order ??
+        lookup.subLookups.findIndex((item) => item.id === subLookup.id) + 1,
+    });
     setErrors({});
     setForm({
       lookupId: String(lookup.id),
-      code: subLookup.code,
+      code: subLookupCode.startsWith(lookupCode)
+        ? subLookupCode.slice(lookupCode.length)
+        : subLookupCode,
       name: subLookup.name,
       status: subLookup.status,
       description: subLookup.description,
@@ -176,6 +190,7 @@ export default function LookupManagementPage() {
     setEditing(null);
     setErrors({});
     setForm({ ...emptyForm, lookupId: String(lookup.id) });
+    void loadLookupOptions(lookup);
     document
       .getElementById("lookup-form")
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -183,10 +198,17 @@ export default function LookupManagementPage() {
 
   function validateForm() {
     const nextErrors = {};
-    const code = form.code.trim().toUpperCase();
+    const enteredCode = form.code.trim().toUpperCase();
+    const parent = lookups.find(
+      (lookup) => String(lookup.id) === form.lookupId,
+    );
+    const code =
+      activeTab === "sub" ? `${parent?.code ?? ""}${enteredCode}` : enteredCode;
     if (activeTab === "sub" && !form.lookupId)
       nextErrors.lookupId = "Select a lookup.";
-    if (!code) nextErrors.code = "Code is required.";
+    if (!enteredCode) nextErrors.code = "Code is required.";
+    else if (activeTab === "sub" && !/^\d+$/.test(enteredCode))
+      nextErrors.code = "Enter the numeric suffix only, such as 01.";
     else {
       const existingCodes = lookups.flatMap((lookup) => [
         { type: "lookup", id: lookup.id, code: lookup.code },
@@ -212,8 +234,15 @@ export default function LookupManagementPage() {
     event.preventDefault();
     if (isSubmitting || !validateForm()) return;
 
+    const parent =
+      activeTab === "sub"
+        ? lookups.find((lookup) => String(lookup.id) === form.lookupId)
+        : null;
     const values = {
-      code: form.code.trim().toUpperCase(),
+      code:
+        activeTab === "sub"
+          ? `${parent?.code ?? ""}${form.code.trim().toUpperCase()}`
+          : form.code.trim().toUpperCase(),
       name: form.name.trim(),
       status: form.status,
       description: form.description.trim(),
@@ -251,9 +280,6 @@ export default function LookupManagementPage() {
       }
 
       if (activeTab === "sub" && !editing) {
-        const parent = lookups.find(
-          (lookup) => String(lookup.id) === form.lookupId,
-        );
         if (!parent?.code) throw new Error("Select a valid lookup.");
 
         await createLookupSubType(parent.code, {
@@ -299,6 +325,10 @@ export default function LookupManagementPage() {
 
       if (activeTab === "lookup") {
         if (editing?.type === "lookup") {
+          await updateLookupType(editing.id, {
+            name: values.name,
+            status: values.status,
+          });
           setLookups((current) =>
             current.map((lookup) =>
               lookup.id === editing.id ? { ...lookup, ...values } : lookup,
@@ -313,6 +343,11 @@ export default function LookupManagementPage() {
           setToast("Lookup created successfully.");
         }
       } else if (editing?.type === "sub") {
+        await updateLookupSubType(editing.id, {
+          name: values.name,
+          display_order: editing.displayOrder,
+          status: values.status,
+        });
         setLookups((current) =>
           current.map((lookup) =>
             lookup.id === editing.parentId
@@ -475,6 +510,9 @@ export default function LookupManagementPage() {
 
   const isEditing = editing !== null;
   const isSubTab = activeTab === "sub";
+  const selectedLookup = isSubTab
+    ? lookups.find((lookup) => String(lookup.id) === form.lookupId)
+    : null;
 
   return (
     <AppShell>
@@ -539,9 +577,14 @@ export default function LookupManagementPage() {
                 <select
                   id="lookup-parent"
                   value={form.lookupId}
-                  onChange={(event) =>
-                    updateField("lookupId", event.target.value)
-                  }
+                  onChange={(event) => {
+                    const lookupId = event.target.value;
+                    updateField("lookupId", lookupId);
+                    const parent = lookups.find(
+                      (lookup) => String(lookup.id) === lookupId,
+                    );
+                    if (parent) void loadLookupOptions(parent);
+                  }}
                   aria-invalid={Boolean(errors.lookupId)}
                 >
                   <option value="">Select a lookup</option>
@@ -561,22 +604,45 @@ export default function LookupManagementPage() {
                 {isSubTab ? "Sublookup Code" : "Lookup Code"}
                 <span aria-hidden="true">*</span>
               </label>
-              <input
-                id="lookup-code"
-                value={form.code}
-                onChange={(event) => updateField("code", event.target.value)}
-                placeholder="e.g. Value"
-                autoComplete="off"
-                readOnly={isEditing}
-                aria-invalid={Boolean(errors.code)}
-              />
+              {isSubTab ? (
+                <div className="lookup-code-composer">
+                  <span className="lookup-code-prefix">
+                    {selectedLookup?.code || "Lookup code"}
+                  </span>
+                  <input
+                    id="lookup-code"
+                    value={form.code}
+                    onChange={(event) =>
+                      updateField("code", event.target.value)
+                    }
+                    placeholder="01"
+                    autoComplete="off"
+                    inputMode="numeric"
+                    readOnly={isEditing}
+                    aria-invalid={Boolean(errors.code)}
+                    aria-label="Sublookup code suffix"
+                  />
+                </div>
+              ) : (
+                <input
+                  id="lookup-code"
+                  value={form.code}
+                  onChange={(event) => updateField("code", event.target.value)}
+                  placeholder="e.g. 10027"
+                  autoComplete="off"
+                  readOnly={isEditing}
+                  aria-invalid={Boolean(errors.code)}
+                />
+              )}
               {errors.code && (
                 <span className="lookup-error">{errors.code}</span>
               )}
               <span className="lookup-hint">
                 {isEditing
                   ? "Code cannot be changed after creation."
-                  : "Codes are unique and should be integers."}
+                  : isSubTab
+                    ? "Enter only the numeric suffix, for example 01."
+                    : "Codes are unique and should be integers."}
               </span>
             </div>
             <div className="lookup-field">
@@ -597,7 +663,7 @@ export default function LookupManagementPage() {
             </div>
             <div className="lookup-field">
               <label htmlFor="lookup-status">
-                {isSubTab ? "Sublookup Status" : "Lookup Status"}
+                {isSubTab ? "Sublookup Status*" : "Lookup Status*"}
               </label>
               <select
                 id="lookup-status"

@@ -119,6 +119,7 @@ export default function CustomerManagementPage() {
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [kycFilter, setKycFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
   const [deleteCustomer, setDeleteCustomer] = useState(null);
   const [formError, setFormError] = useState('');
   const [applications, setApplications] = useState(() => (Array.isArray(api.applications) ? api.applications : []));
@@ -155,11 +156,13 @@ export default function CustomerManagementPage() {
   const handleSearchSubmit = (event) => {
     event.preventDefault();
     setSearchTerm(searchInput);
+    setCurrentPage(1);
   };
 
   const clearSearch = () => {
     setSearchInput('');
     setSearchTerm('');
+    setCurrentPage(1);
   };
 
   const filteredCustomers = useMemo(() => {
@@ -174,6 +177,14 @@ export default function CustomerManagementPage() {
       return matchesSearch && matchesKyc;
     });
   }, [customers, searchTerm, kycFilter]);
+
+  const customersPerPage = 5;
+  const pageCount = Math.max(1, Math.ceil(filteredCustomers.length / customersPerPage));
+  const activePage = Math.min(currentPage, pageCount);
+  const pageCustomers = filteredCustomers.slice(
+    (activePage - 1) * customersPerPage,
+    activePage * customersPerPage
+  );
 
   const confirmDelete = () => {
     if (!deleteCustomer) return;
@@ -250,7 +261,6 @@ export default function CustomerManagementPage() {
           <div className="customer-table-heading">
             <div>
               <h2>Customer Directory</h2>
-              <p>{filteredCustomers.length} of {customers.length} customers</p>
             </div>
           </div>
 
@@ -259,9 +269,12 @@ export default function CustomerManagementPage() {
             <label className="customer-search-bar" aria-label="Search customers">
               <Search size={17} className="customer-search-icon" aria-hidden="true" />
               <input
-                type="search"
+                type="text"
                 value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSearchInput(value);
+                }}
                 placeholder="Search by customer name, customer ID, phone, or email..."
                 aria-label="Search customers"
               />
@@ -278,11 +291,22 @@ export default function CustomerManagementPage() {
               )}
             </label>
 
+            <button
+              className={`secondary-button customer-search-button${searchInput.trim() ? ' has-search-text' : ''}`}
+              type="submit"
+            >
+              <Search size={15} aria-hidden="true" />
+              <span>Search</span>
+            </button>
+
             <div className="customer-filter-select-wrapper">
               <select
                 className="customer-filter-select"
                 value={kycFilter}
-                onChange={(event) => setKycFilter(event.target.value)}
+                onChange={(event) => {
+                  setKycFilter(event.target.value);
+                  setCurrentPage(1);
+                }}
                 aria-label="Filter by KYC status"
               >
                 <option value="All">All KYC Status</option>
@@ -292,10 +316,6 @@ export default function CustomerManagementPage() {
               <ChevronDown size={14} className="customer-select-chevron" aria-hidden="true" />
             </div>
 
-            <button className="secondary-button customer-search-button" type="submit">
-              <Search size={15} aria-hidden="true" />
-              <span>Search</span>
-            </button>
           </form>
 
           {/* Table with columns: Srno, CustomerID, customer name, email, phone number, loan amount, active loan, action */}
@@ -314,7 +334,7 @@ export default function CustomerManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredCustomers.map((customer, index) => {
+                {pageCustomers.map((customer, index) => {
                   const customerName = formatCustomerNameWithTitle(customer);
                   const customerEmail = getCustomerEmail(customer);
                   const customerPhone = customer.phone || customer.onboardingForm?.mobileNo || '—';
@@ -324,7 +344,7 @@ export default function CustomerManagementPage() {
                   return (
                     <tr key={customer.id}>
                       <td style={{ textAlign: 'center' }} className="customer-sr-cell">
-                        {index + 1}
+                        {(activePage - 1) * customersPerPage + index + 1}
                       </td>
                       <td>
                         <strong className="customer-id-badge">{customer.id}</strong>
@@ -350,7 +370,13 @@ export default function CustomerManagementPage() {
                         <div className="customer-row-actions">
                           <Link
                             className="customer-action-btn view"
-                            href={`/customer_management/view/${encodeURIComponent(customer.id)}`}
+                            href="/customer_management/view"
+                            onClick={() => {
+                              window.sessionStorage.setItem(
+                                'customer_management:selectedViewId',
+                                customer.id
+                              );
+                            }}
                             aria-label={`View ${customerName}`}
                             title="View customer profile"
                             style={{ background: '#e6f4f2', borderColor: '#8bc2bc', color: '#177e7a' }}
@@ -408,9 +434,43 @@ export default function CustomerManagementPage() {
                     </td>
                   </tr>
                 )}
+
+                {filteredCustomers.length > 0 && Array.from(
+                  { length: customersPerPage - pageCustomers.length },
+                  (_, index) => (
+                    <tr key={`customer-empty-row-${activePage}-${index}`} aria-hidden="true">
+                      {Array.from({ length: 8 }, (_, cellIndex) => (
+                        <td key={cellIndex}>&nbsp;</td>
+                      ))}
+                    </tr>
+                  )
+                )}
               </tbody>
             </table>
           </div>
+          {filteredCustomers.length > 0 && (
+            <nav className="customer-pagination" aria-label="Customer pages">
+              <span>Page {activePage} of {pageCount}</span>
+              <div className="customer-pagination-controls">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                  disabled={activePage === 1}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
+                  disabled={activePage === pageCount}
+                >
+                  Next
+                </button>
+              </div>
+            </nav>
+          )}
         </Card>
 
         {/* Delete Confirmation Modal */}
@@ -631,12 +691,12 @@ export default function CustomerManagementPage() {
           border-radius: 8px;
           background: #fff;
           color: #849497;
-          transition: border-color 0.15s ease, box-shadow 0.15s ease;
+          transition: border-color 0.15s ease;
         }
 
         .customer-search-bar:focus-within {
           border-color: #177e7a;
-          box-shadow: 0 0 0 3px rgba(23, 126, 122, 0.12);
+          box-shadow: none;
         }
 
         .customer-search-bar input {
@@ -718,12 +778,43 @@ export default function CustomerManagementPage() {
           white-space: nowrap;
         }
 
+        .customer-search-button.has-search-text {
+          border-color: #177e7a;
+          background: #177e7a;
+          color: #fff;
+        }
+
+        .customer-search-button.has-search-text:hover {
+          border-color: #126b67;
+          background: #126b67;
+        }
+
         /* Table Structure & Styling */
         .customer-table-scroll {
           overflow-x: auto;
           border: 1px solid #e2ecee;
           border-radius: 8px;
           scrollbar-width: thin;
+        }
+
+        .customer-pagination {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding-top: 14px;
+          color: #6a8286;
+          font-size: 12.5px;
+        }
+
+        .customer-pagination-controls {
+          display: flex;
+          gap: 8px;
+        }
+
+        .customer-pagination-controls button:disabled {
+          cursor: not-allowed;
+          opacity: 0.5;
         }
 
         .customer-directory-table {
