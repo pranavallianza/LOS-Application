@@ -18,7 +18,26 @@ export default function EditUserPage() {
 
   useEffect(() => {
     if (resolvedId) {
-      const emp = getEmployeeById(resolvedId);
+      let emp = null;
+      try {
+        const storedRecord = window.sessionStorage.getItem('los_user_management_edit_record');
+        if (storedRecord) {
+          const { id, employee } = JSON.parse(storedRecord);
+          const requestedId = String(resolvedId).toLowerCase();
+          const storedId = String(id || '').toLowerCase();
+          const employeeIds = [
+            employee?.id,
+            employee?.empNo,
+            employee?.employeeId,
+          ].map((value) => String(value || '').toLowerCase());
+          if (storedId === requestedId || employeeIds.includes(requestedId)) {
+            emp = employee;
+          }
+        }
+      } catch {
+        emp = null;
+      }
+      if (!emp) emp = getEmployeeById(resolvedId);
       setEmployee(emp);
       setLoading(false);
     } else {

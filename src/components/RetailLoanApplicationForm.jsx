@@ -77,6 +77,31 @@ function dateAfter(value) {
   return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
 }
 
+function addMonthsToDate(value, months) {
+  if (!isValidDate(value) || !Number.isInteger(months)) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const targetMonth = year * 12 + month - 1 + months;
+  const targetYear = Math.floor(targetMonth / 12);
+  const targetMonthIndex = targetMonth % 12;
+  const lastDay = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+  return `${targetYear}-${String(targetMonthIndex + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function calculateInstalmentEndDate(startDate, tenureMonths) {
+  const tenure = Number(tenureMonths);
+  if (!String(tenureMonths ?? '').trim() || !Number.isInteger(tenure) || tenure <= 0) return '';
+  return addMonthsToDate(startDate, tenure);
+}
+
+function formatDateText(value) {
+  if (!isValidDate(value)) return '';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 function getTodayDate() {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -180,6 +205,36 @@ function calculateTotalInterestRate(interestRate, offsetRate) {
   if (!interest || !isValidPercentage(interest) || (offset && !isValidPercentage(offset))) return '';
   const total = Number(interest) + (offset ? Number(offset) : 0);
   return String(Math.round(total * 100) / 100);
+}
+
+export function calculateInstalmentAmount(loanAmount, tenureMonths, totalInterestRate) {
+  const amountText = String(loanAmount ?? '').trim();
+  const tenureText = String(tenureMonths ?? '').trim();
+  const rateText = String(totalInterestRate ?? '').trim();
+  const amount = Number(amountText);
+  const tenure = Number(tenureText);
+  const annualRate = Number(rateText);
+
+  if (
+    !amountText
+    || !tenureText
+    || !rateText
+    || !Number.isFinite(amount)
+    || amount <= 0
+    || !Number.isInteger(tenure)
+    || tenure <= 0
+    || !isValidPercentage(rateText)
+    || !Number.isFinite(annualRate)
+  ) {
+    return '';
+  }
+
+  const monthlyRate = annualRate / 1200;
+  const payment = monthlyRate === 0
+    ? amount / tenure
+    : amount * monthlyRate / (1 - ((1 + monthlyRate) ** -tenure));
+
+  return Number.isFinite(payment) ? payment.toFixed(2) : '';
 }
 
 function validateText(value, label, { required = false, minLength = 3, maxLength = 50, pattern = TEXT_PATTERN } = {}) {
@@ -476,6 +531,15 @@ export function createInitialRetailLoanForm(application) {
 
   if (!mergedForm.relatedParties.length) mergedForm.relatedParties = [blankRelatedParty()];
   mergedForm.totalInterestRate = calculateTotalInterestRate(mergedForm.interestRate, mergedForm.offsetRate);
+  mergedForm.instalmentAmount = calculateInstalmentAmount(
+    mergedForm.loanAmount,
+    mergedForm.tenureMonths,
+    mergedForm.totalInterestRate,
+  );
+  mergedForm.instalmentEndDate = calculateInstalmentEndDate(
+    mergedForm.instalmentStartDate,
+    mergedForm.tenureMonths,
+  );
   mergedForm.securityValue = getSynchronizedSecurityValue(mergedForm.securityAmount);
   return mergedForm;
 }
@@ -621,7 +685,10 @@ function RetailField({
 export function getRepaymentRows(form) {
   const amount = Number(form.loanAmount);
   const tenure = Number(form.tenureMonths);
-  const annualRate = Number(form.totalInterestRate || form.interestRate);
+  const totalRate = String(form.totalInterestRate ?? '').trim()
+    ? form.totalInterestRate
+    : calculateTotalInterestRate(form.interestRate, form.offsetRate);
+  const annualRate = Number(totalRate);
   if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(tenure) || tenure <= 0) {
     return [];
   }
@@ -629,26 +696,26 @@ export function getRepaymentRows(form) {
   const monthlyRate = Number.isFinite(annualRate) && annualRate > 0
     ? annualRate / 1200
     : 0;
-  const enteredInstalment = Number(form.instalmentAmount);
-  const instalment = Number.isFinite(enteredInstalment) && enteredInstalment > 0
-    ? enteredInstalment
-    : monthlyRate
-      ? amount * monthlyRate / (1 - ((1 + monthlyRate) ** -tenure))
-      : amount / tenure;
+  const instalment = Number(calculateInstalmentAmount(amount, tenure, totalRate));
+  if (!Number.isFinite(instalment) || instalment <= 0) return [];
   const start = form.instalmentStartDate ? new Date(`${form.instalmentStartDate}T00:00:00`) : null;
-  let balance = amount;
+  const roundToCents = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+  let balance = roundToCents(amount);
 
-  return Array.from({ length: Math.min(tenure, 120) }, (_, index) => {
-    const interest = balance * monthlyRate;
-    const principal = Math.min(balance, Math.max(0, instalment - interest));
-    const currentBalance = Math.max(0, balance - principal);
-    const date = start ? new Date(start.getFullYear(), start.getMonth() + index, start.getDate()) : null;
+  return Array.from({ length: tenure }, (_, index) => {
+    const interest = roundToCents(balance * monthlyRate);
+    const principal = index === tenure - 1
+      ? balance
+      : Math.min(balance, Math.max(0, roundToCents(instalment - interest)));
+    const currentBalance = roundToCents(Math.max(0, balance - principal));
+    const dateValue = start ? addMonthsToDate(form.instalmentStartDate, index) : '';
+    const date = dateValue ? new Date(`${dateValue}T00:00:00`) : null;
     balance = currentBalance;
     return {
       month: date
         ? date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
         : index + 1,
-      instalment: Math.min(instalment, principal + interest),
+      instalment: roundToCents(principal + interest),
       interest,
       principal,
       balance: currentBalance,
@@ -820,6 +887,21 @@ export default function RetailLoanApplicationForm({
         name === 'offsetRate' ? value : form.offsetRate,
       );
       changedFields.add('totalInterestRate');
+    }
+    if (['loanAmount', 'tenureMonths', 'interestRate', 'offsetRate'].includes(name)) {
+      nextForm.instalmentAmount = calculateInstalmentAmount(
+        nextForm.loanAmount,
+        nextForm.tenureMonths,
+        nextForm.totalInterestRate,
+      );
+      changedFields.add('instalmentAmount');
+    }
+    if (name === 'tenureMonths' || name === 'instalmentStartDate') {
+      nextForm.instalmentEndDate = calculateInstalmentEndDate(
+        nextForm.instalmentStartDate,
+        nextForm.tenureMonths,
+      );
+      changedFields.add('instalmentEndDate');
     }
     if (name === 'securityAmount') {
       nextForm.securityValue = getSynchronizedSecurityValue(value);
@@ -1012,10 +1094,6 @@ export default function RetailLoanApplicationForm({
       if (isValidDate(values.instalmentStartDate) && isValidDate(values.instalmentEndDate)
         && values.instalmentEndDate < values.instalmentStartDate) {
         next.instalmentEndDate = 'Instalment end date cannot precede the start date.';
-      }
-      if (isValidDate(values.expiryDate) && isValidDate(values.instalmentEndDate)
-        && values.instalmentEndDate > values.expiryDate) {
-        next.instalmentEndDate = 'Instalment end date cannot be after the expiry date.';
       }
     }
 
@@ -1513,9 +1591,9 @@ export default function RetailLoanApplicationForm({
                     {input('Bullet Payment (₹)', 'bulletPayment', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
                   </div>
                   <div className="retail-grid four-column">
-                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true, placeholder: 'Calculated automatically' })}
                     {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
-                    {input('Instalment End Date', 'instalmentEndDate', { className: 'column-four', type: 'date', min: form.instalmentStartDate, max: form.expiryDate, required: true })}
+                    {input('Instalment End Date', 'instalmentEndDate', { className: 'column-four retail-installment-end-date', type: 'text', value: formatDateText(form.instalmentEndDate), readOnly: true, required: true })}
                   </div>
                 </section>
               )}
@@ -2183,6 +2261,12 @@ export default function RetailLoanApplicationForm({
           min-height: 40px;
           font-family: inherit;
           font-size: 12px;
+        }
+
+        :global(.retail-installment-end-date .retail-input-control:read-only) {
+          background: #fff;
+          color: #1b3541;
+          cursor: default;
         }
 
         .retail-compact-details :global(.retail-field .lead-calendar-picker .lead-date-picker-trigger) {
