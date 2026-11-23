@@ -1,0 +1,58 @@
+import axios from 'axios';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+const API_ROOT = API_BASE_URL?.replace(/\/api\/?$/i, '');
+
+function getHeaders() {
+  const headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+  if (typeof window === 'undefined') return headers;
+
+  try {
+    const authData = JSON.parse(window.localStorage.getItem('authData') || '{}');
+    if (authData.accessToken) headers.Authorization = `Bearer ${authData.accessToken}`;
+  } catch {
+    throw new Error('Authentication data is invalid. Please sign in again.');
+  }
+  return headers;
+}
+
+function getErrorMessage(error) {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message || error.response?.data?.error;
+    if (typeof message === 'string' && message.trim()) return message;
+    if (!error.response) return 'Unable to reach the lead service. Check your connection and try again.';
+  }
+  return error instanceof Error ? error.message : 'The lead service request failed.';
+}
+
+function unwrapResponse(data) {
+  if (data?.success === false) throw new Error(data.message || data.error || 'The lead service request failed.');
+  return data?.data ?? data;
+}
+
+export async function getRetailCustomerOnboardingLeads() {
+  if (!API_ROOT) throw new Error('NEXT_PUBLIC_API_URL is not configured.');
+  try {
+    const response = await axios.get(`${API_ROOT}/api/leads`, {
+      params: { page: 0, size: 1000 },
+      headers: getHeaders(),
+    });
+    const result = unwrapResponse(response.data);
+    const leads = Array.isArray(result) ? result : result?.content || result?.items || result?.leads || result?.records;
+    if (!Array.isArray(leads)) throw new Error('The lead service returned an unsupported lead list.');
+    return leads;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
+export async function getRetailCustomerOnboardingLead(leadId) {
+  if (!API_ROOT) throw new Error('NEXT_PUBLIC_API_URL is not configured.');
+  try {
+    const response = await axios.get(`${API_ROOT}/api/leads/${encodeURIComponent(leadId)}`, { headers: getHeaders() });
+    const result = unwrapResponse(response.data);
+    return result?.lead ?? result;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}

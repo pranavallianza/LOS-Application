@@ -14,6 +14,7 @@ import {
   Home,
   Landmark,
   Plus,
+  Search,
   Trash2,
   UploadCloud,
   Users,
@@ -23,6 +24,10 @@ import {
 import AppShell from '../../../components/AppShell';
 import LeadDatePicker from '../../../components/LeadDatePicker';
 import { api } from '../../../services/api.js';
+import {
+  getRetailCustomerOnboardingLead,
+  getRetailCustomerOnboardingLeads,
+} from '../../../services/retail_customer_onboarding';
 import {
   createCustomerRecord,
   getCustomerLoanHistory,
@@ -59,7 +64,7 @@ const CKYC_REGEX = /^\d{14}$/;
 const NAME_MAX_LENGTH = 50;
 const NAME_REGEX = /^[A-Za-z][A-Za-z .'-]*$/;
 const LETTERS_AND_COMMON_PUNCTUATION_REGEX = /^[A-Za-z][A-Za-z .'&-]*$/;
-const LEAD_ID_REGEX = /^[A-Za-z0-9]+$/;
+const LEAD_ID_REGEX = /^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/;
 const BRANCH_REGEX = /^[A-Za-z ]{3,50}$/;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ACCEPTED_FILE_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
@@ -123,7 +128,7 @@ const sanitizeInput = (key, value) => {
   if (typeof value !== 'string') return value;
 
   if (key === 'leadId') {
-    return value.replace(/[^A-Za-z0-9]/g, '').slice(0, 50);
+    return value.replace(/[^A-Za-z0-9-]/g, '').slice(0, 50);
   }
 
   if (key === 'city') {
@@ -317,6 +322,51 @@ const createInitialForm = () => ({
   references: [createReference(), createReference()]
 });
 
+const mapLeadToCustomerForm = (lead) => {
+  const address = Array.isArray(lead.addressDetails)
+    ? lead.addressDetails.find((item) => String(item.addressType || '').toLowerCase() === 'current') || lead.addressDetails[0]
+    : lead;
+  const titleValue = String(lead.namePrefix || lead.title || '').replace(/\.$/, '').trim();
+  const title = ['Mr', 'Ms', 'Mrs'].find((option) => option.toLowerCase() === titleValue.toLowerCase()) || '';
+
+  return {
+    leadId: String(lead.leadId || lead.id || ''),
+    title,
+    fullName: String(lead.firstName || ''),
+    middleName: String(lead.middleName || ''),
+    lastName: String(lead.lastName || ''),
+    dob: lead.dateOfBirth || lead.dob || '',
+    age: lead.age == null ? getAge(lead.dateOfBirth || lead.dob) : String(lead.age),
+    panCard: String(lead.panCard || ''),
+    branch: String(lead.branch || ''),
+    email: String(lead.email || ''),
+    customerType: String(lead.customerType || ''),
+    aadhaarNumber: String(lead.aadhaarCard || lead.aadhaarNumber || ''),
+    gender: String(lead.gender || ''),
+    maritalStatus: String(lead.maritalStatus || ''),
+    mobileNo: String(lead.mobileNumber || lead.mobile || ''),
+    occupation: String(lead.occupation || ''),
+    residentialStatus: String(lead.residentialStatus || ''),
+    residentialType: String(address?.residentialType || lead.residentialType || ''),
+    flatBuildingName: String(address?.flatBuildingName || ''),
+    streetRoad: String(address?.streetRoad || ''),
+    landMark: String(address?.landmark || address?.landMark || ''),
+    city: String(address?.city || ''),
+    state: String(address?.state || lead.state || ''),
+    pinCode: String(address?.pinCode || ''),
+    employmentType: String(lead.employmentType || ''),
+    employerType: String(lead.employerType || ''),
+    designation: String(lead.designation || ''),
+    employerName: String(lead.employerName || ''),
+    empEmailId: String(lead.empEmailId || ''),
+    location: String(lead.location || ''),
+    yearsOfService: String(lead.yearsOfService || ''),
+    annualIncome: String(lead.annualIncome || ''),
+    bankName: String(lead.bankName || ''),
+    bankAccountNo: String(lead.primaryBankAccount || lead.bankAccountNo || ''),
+  };
+};
+
 const normalizePan = (value) => {
   const characters = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   let pan = '';
@@ -452,7 +502,7 @@ const validateStep = (stepIndex, values) => {
   if (stepIndex === 0) {
     if (values.leadId) {
       if (values.leadId.length > 50 || !LEAD_ID_REGEX.test(values.leadId)) {
-        errors.leadId = 'Lead ID must be 1 to 50 alphanumeric characters only.';
+        errors.leadId = 'Lead ID must be 1 to 50 letters or numbers, with hyphens between segments.';
       }
     }
     if (String(values.branch ?? '').trim() && !BRANCH_REGEX.test(values.branch.trim())) {
@@ -905,7 +955,7 @@ function Field({
   const id = `field-${displayLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 
   return (
-    <label className={`loan-field ${className}`} htmlFor={id}>
+    <label className={`loan-field ${className}`} data-filled={value !== undefined && value !== null && value !== '' ? 'true' : undefined} htmlFor={id}>
       <span>{displayLabel}{isRequired && <em className="customer-required-mark">*</em>}</span>
 
       {children || (type === 'date' ? (
@@ -957,7 +1007,7 @@ function SelectField({
   const displayLabel = isRequired ? label.replace(/\s\*$/, '') : label;
 
   return (
-    <label className={`loan-field ${className}`}>
+    <label className={`loan-field ${className}`} data-filled={value !== undefined && value !== null && value !== '' ? 'true' : undefined}>
       <span>{displayLabel}{isRequired && <em className="customer-required-mark">*</em>}</span>
 
       <select
@@ -1069,6 +1119,63 @@ export default function LoanApplicationPage() {
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [documentPreview, setDocumentPreview] = useState(null);
+  const [leadPickerOpen, setLeadPickerOpen] = useState(false);
+  const [leadSearch, setLeadSearch] = useState('');
+  const [availableLeads, setAvailableLeads] = useState([]);
+  const [leadPickerLoading, setLeadPickerLoading] = useState(false);
+  const [leadPickerError, setLeadPickerError] = useState('');
+  const [selectingLeadId, setSelectingLeadId] = useState('');
+  const [leadPrefilled, setLeadPrefilled] = useState(false);
+
+  const openLeadPicker = async () => {
+    setLeadSearch('');
+    setLeadPickerError('');
+    setLeadPickerOpen(true);
+    setLeadPickerLoading(true);
+    try {
+      setAvailableLeads(await getRetailCustomerOnboardingLeads());
+    } catch (error) {
+      setAvailableLeads([]);
+      setLeadPickerError(error instanceof Error ? error.message : 'Unable to load leads.');
+    } finally {
+      setLeadPickerLoading(false);
+    }
+  };
+
+  const matchingLeads = availableLeads.filter((lead) => {
+    const query = leadSearch.trim().toLowerCase();
+    const leadId = String(lead.leadId || lead.id || '');
+    const firstName = [lead.firstName, lead.middleName, lead.lastName].filter(Boolean).join(' ');
+    const mobile = String(lead.mobileNumber || lead.mobile || '');
+    return !query || `${leadId} ${firstName} ${mobile}`.toLowerCase().includes(query);
+  });
+
+  const selectLead = async (lead) => {
+    const leadId = String(lead.leadId || lead.id || '');
+    setSelectingLeadId(leadId);
+    setLeadPickerError('');
+    try {
+      const fullLead = await getRetailCustomerOnboardingLead(leadId);
+      setForm((previous) => ({ ...previous, ...mapLeadToCustomerForm(fullLead) }));
+      setLeadPrefilled(true);
+      setValidationErrors({});
+      setSaveError('');
+      setLeadPickerOpen(false);
+    } catch (error) {
+      setLeadPickerError(error instanceof Error ? error.message : 'Unable to load the selected lead.');
+    } finally {
+      setSelectingLeadId('');
+    }
+  };
+
+  const clearLeadForm = () => {
+    setForm(createInitialForm());
+    setLeadPrefilled(false);
+    setValidationErrors({});
+    setSaveError('');
+    setSubmissionSuccess(false);
+    setCurrentStep(0);
+  };
 
   useEffect(() => {
     if (!submissionSuccess) return undefined;
@@ -1184,7 +1291,7 @@ export default function LoanApplicationPage() {
     let liveError = stepErrors[field];
     if (sanitizedValue !== value) {
       if (field === 'leadId') {
-        liveError = 'Lead ID can contain letters and numbers only.';
+        liveError = 'Lead ID can contain letters, numbers, and hyphens only.';
       } else if (LETTERS_ONLY_FIELDS.has(field)) {
         liveError = NAME_ERROR_FIELDS.has(field)
           ? INVALID_NAME_MESSAGE
@@ -1530,8 +1637,37 @@ export default function LoanApplicationPage() {
         .customer-onboarding-notice-success{border-color:#c9e6d6;background:#f1fbf5;color:#25613d}
         .customer-onboarding-notice-error{border-color:#efcaca;background:#fff5f5;color:#8f2d2d}
         .customer-onboarding-notice span{font-size:12px}
+        .customer-lead-id-control{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:8px;align-items:center}
+        .customer-onboarding-shell .loan-field .customer-lead-id-control input{box-sizing:border-box;flex:1;min-width:0;height:38px!important;min-height:38px!important;padding:0 38px 0 10px;border:1px solid #c6dacf;border-radius:8px;background:#fff;color:#263f42;font:inherit}
+        .customer-onboarding-shell .loan-field .customer-lead-search-button{display:grid!important;box-sizing:border-box;width:40px!important;height:38px!important;min-height:38px!important;flex:none;place-items:center;padding:0!important;border:1px solid #bfd0d1;border-radius:8px;background:#fff;color:#117a70;cursor:pointer}
+        .customer-lead-search-button:hover{background:#f3f9f7}
+        .customer-onboarding-shell .loan-field .customer-lead-clear-button{position:absolute;top:50%;right:50px;z-index:1;display:grid!important;box-sizing:border-box;width:24px!important;height:24px!important;min-height:24px!important;transform:translateY(-50%);place-items:center;padding:0!important;border:0;border-radius:5px;background:transparent;color:#637a73;cursor:pointer}
+        .customer-lead-clear-button:hover{border-color:#e1b9b9!important;background:#fff6f6!important;color:#a34242!important}
+        .customer-lead-picker-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(16,35,39,.62)}
+        .customer-lead-picker{width:min(760px,100%);max-height:80vh;overflow:hidden;border:1px solid #dce7e7;border-radius:10px;background:#fff;box-shadow:0 20px 60px #10232755}
+        .customer-lead-picker-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid #e3ebeb;background:#f8fbfa}
+        .customer-lead-picker-head h2{margin:0;color:#23474c;font-size:20px}
+        .customer-lead-picker-head p{margin:4px 0 0;color:#73888a;font-size:13px}
+        .customer-lead-picker-body{padding:16px 20px 20px}
+        .customer-lead-picker-search{display:flex;align-items:center;gap:10px;height:44px;margin-bottom:12px;padding:0 12px;border:1px solid #bfd0d1;border-radius:7px;color:#718589}
+        .customer-lead-picker-search input{width:100%;border:0;outline:0;color:#263f42;font:inherit;font-size:14px}
+        .customer-lead-picker-results{max-height:min(45vh,300px);overflow:auto;border:1px solid #dce6e6;border-radius:7px}
+        .customer-lead-picker-table{width:100%;border-collapse:collapse;text-align:left;color:#40585c}
+        .customer-lead-picker-table th{padding:11px 12px;background:#f4f8f7;color:#657b7e;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+        .customer-lead-picker-table td{padding:11px 12px;border-top:1px solid #e7eded;font-size:13px}
+        .customer-lead-picker-table tr:hover td{background:#f8fbfa}
+        .customer-lead-picker-id{font-weight:700;color:#23474c}
+        .customer-lead-picker-select{padding:6px 12px;border:1px solid #c8d9d7;border-radius:6px;background:#fff;color:#117a70;font:inherit;font-weight:700;cursor:pointer}
+        .customer-lead-picker-empty{padding:20px!important;text-align:center;color:#788b8d}
+        .customer-onboarding-shell.customer-lead-prefilled .loan-field[data-filled="true"] input,
+        .customer-onboarding-shell.customer-lead-prefilled .loan-field[data-filled="true"] select,
+        .customer-onboarding-shell.customer-lead-prefilled .loan-field[data-filled="true"] textarea{background-color:#eef8f1!important;border-color:#a9d2b8!important;box-shadow:none!important}
+        .customer-onboarding-shell.customer-lead-prefilled .loan-field[data-filled="true"] input:focus,
+        .customer-onboarding-shell.customer-lead-prefilled .loan-field[data-filled="true"] select:focus,
+        .customer-onboarding-shell.customer-lead-prefilled .loan-field[data-filled="true"] textarea:focus{background-color:#e8f5ec!important;border-color:#368262!important}
+        @media(max-width:640px){.customer-lead-picker-head,.customer-lead-picker-body{padding:14px}.customer-lead-picker-head h2{font-size:18px}.customer-lead-picker-table th,.customer-lead-picker-table td{padding:9px 7px;font-size:11px}}
       `}</style>
-      <div className="loan-application-shell customer-onboarding-shell"
+      <div className={`loan-application-shell customer-onboarding-shell ${leadPrefilled ? 'customer-lead-prefilled' : ''}`}
         style={{
           paddingLeft: "25px",
           paddingRight: "25px",
@@ -1561,16 +1697,17 @@ export default function LoanApplicationPage() {
               const Icon = step.icon;
               const isActive = index === currentStep;
               const isDone = index < currentStep;
+              const isComplete = Object.keys(validateStep(index, form)).length === 0;
 
               return (
                 <button
                   key={step.id}
                   type="button"
-                  className={`loan-step customer-onboarding-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''
+                  className={`loan-step customer-onboarding-step ${isActive ? 'active' : ''} ${isDone ? 'done' : ''} ${isComplete ? 'complete' : ''
                     }`}
                   onClick={() => navigateToStep(index)}
                   aria-current={isActive ? 'step' : undefined}
-                  aria-label={`Step ${index + 1}: ${step.label}${isDone ? ', completed' : ''}`}
+                  aria-label={`Step ${index + 1}: ${step.label}${isComplete ? ', completed' : ''}`}
                 >
                   <span className="loan-step-bubble">
                     <Icon size={14} aria-hidden="true" />
@@ -1593,11 +1730,13 @@ export default function LoanApplicationPage() {
           {currentStep === 0 && (
             <div className="loan-form-section">
               <div className="field-grid three-col">
-                <Field
-                  label="Lead ID"
-                  value={form.leadId}
-                  onChange={(value) => updateField('leadId', value)}
-                />
+                <Field label="Lead ID" value={form.leadId} onChange={(value) => updateField('leadId', value)}>
+                  <div className="customer-lead-id-control">
+                    <input id="field-lead-id" type="text" value={form.leadId ?? ''} onChange={(event) => updateField('leadId', event.target.value)} aria-label="Lead ID" />
+                    <button type="button" className="customer-lead-search-button" onClick={openLeadPicker} aria-label="Search leads"><Search size={21} /></button>
+                    {leadPrefilled && form.leadId && <button type="button" className="customer-lead-clear-button" onClick={clearLeadForm} aria-label="Clear lead and onboarding form" title="Clear form"><X size={18} /></button>}
+                  </div>
+                </Field>
 
 
 
@@ -2468,6 +2607,21 @@ export default function LoanApplicationPage() {
           {currentStep === 4 && (
             <div className="loan-form-section">
               <div className="loan-data-table-wrap document-table-wrap">
+                <button
+                  type="button"
+                  className="loan-inline-button add-row-button document-add-button"
+                  onClick={() =>
+                    setForm((previous) => ({
+                      ...previous,
+                      documents: [
+                        ...previous.documents,
+                        createDocument('')
+                      ]
+                    }))
+                  }
+                >
+                  <Plus size={14} /> Add Document
+                </button>
                 <div className="document-table-frame onboarding-rounded-table-frame">
                   <table className="loan-data-table">
                   <thead>
@@ -2616,22 +2770,6 @@ export default function LoanApplicationPage() {
                   </table>
                 </div>
 
-                <button
-                  type="button"
-                  className="loan-inline-button add-row-button"
-                  onClick={() =>
-                    setForm((previous) => ({
-                      ...previous,
-                      documents: [
-                        ...previous.documents,
-                        createDocument('')
-                      ]
-                    }))
-                  }
-                >
-                  <Plus size={14} /> Add Document
-                </button>
-
                 <p className="loan-file-help">
                   Supported formats: PDF, JPG, JPEG, PNG. Maximum file size: 5
                   MB.
@@ -2644,6 +2782,22 @@ export default function LoanApplicationPage() {
           {currentStep === 5 && (
             <div className="loan-form-section">
               <div className="loan-data-table-wrap loan-history-table-wrap">
+                <button
+                  type="button"
+                  className="loan-inline-button add-row-button loan-history-add-button"
+                  aria-label="Add Loan History"
+                  onClick={() =>
+                    setForm((previous) => ({
+                      ...previous,
+                      loanHistory: [
+                        ...previous.loanHistory,
+                        createLoanHistoryRow()
+                      ]
+                    }))
+                  }
+                >
+                  <Plus size={14} /> Add Loan History
+                </button>
                 <div className="loan-history-table-frame onboarding-rounded-table-frame">
                   <table className="loan-data-table">
                   <thead>
@@ -2798,22 +2952,6 @@ export default function LoanApplicationPage() {
                   </table>
                 </div>
 
-                <button
-                  type="button"
-                  className="loan-inline-button add-row-button loan-history-add-button"
-                  aria-label="Add loan record"
-                  onClick={() =>
-                    setForm((previous) => ({
-                      ...previous,
-                      loanHistory: [
-                        ...previous.loanHistory,
-                        createLoanHistoryRow()
-                      ]
-                    }))
-                  }
-                >
-                  <Plus size={14} /> Add
-                </button>
               </div>
             </div>
           )}
@@ -2936,6 +3074,46 @@ export default function LoanApplicationPage() {
           </div>
         </div>
       </div>
+      {leadPickerOpen && (
+        <div className="customer-lead-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setLeadPickerOpen(false); }}>
+          <section className="customer-lead-picker" role="dialog" aria-modal="true" aria-labelledby="customer-lead-picker-title" onKeyDown={(event) => { if (event.key === 'Escape') setLeadPickerOpen(false); }}>
+            <header className="customer-lead-picker-head">
+              <div><h2 id="customer-lead-picker-title">Select a lead</h2></div>
+              <button className="icon-button" type="button" onClick={() => setLeadPickerOpen(false)} aria-label="Close lead search"><X size={18} /></button>
+            </header>
+            <div className="customer-lead-picker-body">
+              <label className="customer-lead-picker-search" htmlFor="customer-lead-search">
+                <Search size={21} aria-hidden="true" />
+                <input id="customer-lead-search" type="search" value={leadSearch} onChange={(event) => setLeadSearch(event.target.value)} placeholder="Search by Lead ID, first name, or mobile number" autoComplete="off" autoFocus />
+              </label>
+              <div className="customer-lead-picker-results">
+                <table className="customer-lead-picker-table">
+                  <thead><tr><th scope="col">Lead ID</th><th scope="col">Customer Name</th><th scope="col">Mobile Number</th><th scope="col"><span className="sr-only">Action</span></th></tr></thead>
+                  <tbody>
+                    {leadPickerLoading
+                      ? <tr><td className="customer-lead-picker-empty" colSpan="4">Loading leads...</td></tr>
+                      : leadPickerError
+                        ? <tr><td className="customer-lead-picker-empty" colSpan="4" role="alert">{leadPickerError}</td></tr>
+                        : matchingLeads.map((lead, index) => {
+                          const leadId = String(lead.leadId || lead.id || index);
+                          const customerName = [lead.firstName, lead.middleName, lead.lastName].filter(Boolean).join(' ');
+                          return (
+                            <tr key={leadId}>
+                              <td className="customer-lead-picker-id">{lead.leadId || lead.id || '—'}</td>
+                              <td>{customerName || '—'}</td>
+                              <td>{lead.mobileNumber || lead.mobile || '—'}</td>
+                              <td><button className="customer-lead-picker-select" type="button" onClick={() => selectLead(lead)} disabled={Boolean(selectingLeadId)}>{selectingLeadId === leadId ? 'Loading...' : 'Select'}</button></td>
+                            </tr>
+                          );
+                        })}
+                    {!leadPickerLoading && !leadPickerError && matchingLeads.length === 0 && <tr><td className="customer-lead-picker-empty" colSpan="4">No leads match your search.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
     </AppShell>
   );
 }

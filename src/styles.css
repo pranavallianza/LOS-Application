@@ -2750,6 +2750,16 @@ td strong {
 .customer-onboarding-stepper .customer-onboarding-step.active .loan-step-bubble {
   box-shadow: none;
 }
+.customer-onboarding-stepper .customer-onboarding-step.complete {
+  border-color: #c8e5d2;
+  background: #e7f5ec;
+  color: #245c47;
+}
+.customer-onboarding-stepper .customer-onboarding-step.active:not(.complete) {
+  border-color: #c8e5d2;
+  background: #f0f8f3;
+  color: #245c47;
+}
 .customer-onboarding-stepper .customer-onboarding-step:hover,
 .customer-onboarding-stepper .customer-onboarding-step:focus,
 .customer-onboarding-stepper .customer-onboarding-step:active {
@@ -2759,6 +2769,14 @@ td strong {
 }
 .customer-onboarding-stepper .loan-step-text {
   display: inline;
+}
+@media (min-width: 1200px) {
+  .customer-onboarding-shell .customer-onboarding-stepper {
+    box-sizing: border-box;
+    padding: 18px 24px;
+    border: 1px solid #d5e5dc;
+    border-radius: 10px;
+  }
 }
 .customer-onboarding-shell .loan-field input,
 .customer-onboarding-shell .loan-field select {
@@ -4165,11 +4183,14 @@ td strong {
   align-items: center;
   gap: 5px;
   width: fit-content;
-  margin: 12px 0 0 auto;
+  margin: 12px 0 12px;
   padding: 7px 12px;
   border-color: #c6dacf;
   background: #fff;
   color: #36525d;
+}
+.customer-onboarding-shell .document-add-button {
+  margin-bottom: 12px;
 }
 .customer-onboarding-shell .loan-history-add-button:hover {
   border-color: #c6dacf;
