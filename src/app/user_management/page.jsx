@@ -7,9 +7,6 @@ import { useRouter } from 'next/navigation';
 import {
 
   Edit3,
-
-  Eye,
-
   Plus,
 
   Search,
@@ -35,10 +32,16 @@ import { getUsers } from '../../services/leadService';
 
 const USERS_PER_PAGE = 5;
 
+function getEnabledFlag(...values) {
+  const value = values.find((candidate) => candidate !== undefined && candidate !== null);
+  return value === true || ['Y', 'YES', 'TRUE', '1'].includes(String(value).toUpperCase());
+}
+
 function normalizeUserRecord(user) {
   const name = user.name
     || user.fullName
     || [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ');
+  const nameParts = String(name || '').trim().split(/\s+/).filter(Boolean);
   const status = String(user.status || '');
   const normalizedStatus = {
     OPERATIVE: 'Active',
@@ -53,14 +56,32 @@ function normalizeUserRecord(user) {
     employeeId: user.employeeId || user.employee_id || user.empNo || user.emp_no,
     name,
     fullName: name,
+    firstName: user.firstName || nameParts[0] || '',
+    middleName: user.middleName || (nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : ''),
+    lastName: user.lastName || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''),
     title: user.title || ({
       MALE: 'Mr.',
       FEMALE: 'Ms.',
     }[String(user.gender || '').toUpperCase()] || ''),
     userName: user.userName || user.username,
+    mobile: user.mobile || user.mobileNumber || user.phoneNumber,
+    dateOfBirth: user.dateOfBirth || user.dob || '',
+    email: user.email || user.emailAddress || '',
+    allow2FA: getEnabledFlag(user.allow2FA, user.twoFaEnabled, user.twoFAEnabled),
+    twoFAEnabled: getEnabledFlag(user.allow2FA, user.twoFaEnabled, user.twoFAEnabled) ? 'Y' : 'N',
+    allowMultiBranch: getEnabledFlag(user.allowMultiBranch, user.multiBranchAccess),
+    multiBranchAccess: getEnabledFlag(user.allowMultiBranch, user.multiBranchAccess) ? 'Y' : 'N',
+    allowLoginOnHolidays: getEnabledFlag(user.allowLoginOnHolidays, user.loginOnHolidays),
+    loginOnHolidays: getEnabledFlag(user.allowLoginOnHolidays, user.loginOnHolidays) ? 'Y' : 'N',
     branch: user.branch || user.branchName || user.loginBranch || user.login_branch_name,
+    loginBranch: user.loginBranch || user.branch || user.branchName || user.login_branch_name,
     designation: user.designation || user.jobTitle || user.position,
     userRole: user.userRole || user.role,
+    systemRole: user.systemRole || user.system_role || 'SUPER_ADMIN',
+    sessionTimeout: user.sessionTimeout ?? user.idleTimeout ?? user.inactiveSessionTimeout ?? 900,
+    idleTimeout: user.idleTimeout ?? user.sessionTimeout ?? user.inactiveSessionTimeout ?? 900,
+    inactiveSessionTimeout: user.inactiveSessionTimeout ?? user.sessionTimeout ?? user.idleTimeout ?? 900,
+    badLogins: user.badLogins ?? 3,
     status: normalizedStatus,
   };
 }
@@ -203,25 +224,55 @@ export default function UserManagementPage() {
   const pageEnd = Math.min(pageStart + USERS_PER_PAGE, filteredRecords.length);
   const paginatedRecords = filteredRecords.slice(pageStart, pageEnd);
 
-  const tableColumns = ['Sr. No.', 'Emp. No.', 'Employee Name', 'Mobile Number', 'Branch', 'Designation', 'User Role', 'Status'];
+  const tableColumns = ['Sr. No.', 'Emp. No.', 'Employee Name', 'Mobile Number', 'Branch', 'Designation', 'User Role', 'Status', 'Action'];
 
-  // Navigate to dedicated full-page View
+  const handleEdit = (emp) => {
+    const id = emp.id || emp.empNo || emp.employeeId;
+    if (!id) {
+      setUsersError('This employee record does not have an ID and cannot be edited.');
+      return;
+    }
 
-  // const handleView = (emp) => {
-
-  //   const id = emp.empNo || emp.employeeId || emp.id;
-
-  //   router.push(`/user_management/view/${id}`);
-
-  // };
-
-  // const handleEdit = (emp) => {
-
-  //   const id = emp.empNo || emp.employeeId || emp.id;
-
-  //   router.push(`/user_management/edit/${id}`);
-
-  // };
+    const editRecord = {
+      id: emp.id,
+      empNo: emp.empNo,
+      employeeId: emp.employeeId,
+      firstName: emp.firstName,
+      middleName: emp.middleName,
+      lastName: emp.lastName,
+      name: emp.name,
+      fullName: emp.fullName,
+      title: emp.title,
+      mobile: emp.mobile,
+      dateOfBirth: String(emp.dateOfBirth || '').slice(0, 10),
+      userName: emp.userName,
+      email: emp.email,
+      allow2FA: emp.allow2FA,
+      twoFAEnabled: emp.twoFAEnabled,
+      designation: emp.designation,
+      userRole: emp.userRole,
+      role: emp.role,
+      systemRole: emp.systemRole,
+      status: emp.status,
+      allowMultiBranch: emp.allowMultiBranch,
+      multiBranchAccess: emp.multiBranchAccess,
+      loginBranch: emp.loginBranch,
+      branch: emp.branch,
+      allowLoginOnHolidays: emp.allowLoginOnHolidays,
+      loginOnHolidays: emp.loginOnHolidays,
+      sessionTimeout: emp.sessionTimeout,
+      idleTimeout: emp.idleTimeout,
+      inactiveSessionTimeout: emp.inactiveSessionTimeout,
+      badLogins: emp.badLogins,
+      loginTime: emp.loginTime || '09:00 AM',
+      logoutTime: emp.logoutTime || '06:00 PM',
+    };
+    window.sessionStorage.setItem(
+      'los_user_management_edit_record',
+      JSON.stringify({ id: String(id), employee: editRecord }),
+    );
+    router.push(`/user_management/edit/${encodeURIComponent(id)}`);
+  };
 
   return (
 
@@ -619,11 +670,12 @@ export default function UserManagementPage() {
                         Designation: '155px',
                         'User Role': '125px',
                         Status: '105px',
+                        Action: '72px',
                       }[column],
                       fontWeight: 700,
                       fontSize: '10px',
                       color: '#173e46',
-                      textAlign: column === 'Sr. No.' ? 'center' : undefined,
+                      textAlign: ['Sr. No.', 'Action'].includes(column) ? 'center' : undefined,
 
                     }}
 
@@ -643,7 +695,7 @@ export default function UserManagementPage() {
 
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 16px', color: '#7a898b' }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '48px 16px', color: '#7a898b' }}>
                     <div style={{ display: 'grid', placeItems: 'center', gap: '8px' }}>
                       <UserRound size={32} color="#9bb0af" />
                       <strong style={{ color: '#173e46', fontSize: '14px' }}>
@@ -756,83 +808,29 @@ export default function UserManagementPage() {
                       </span>
                     </td>
 
-                    {/* <td style={{ padding: '14px 12px', textAlign: 'center' }}>
-
-                      <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-
-                          <PermissionGate module="user-management" action="edit">
-                          <button
-
-                            type="button"
-
-                            className="icon-button"
-
-                            title="View Employee Details"
-
-                            aria-label={`View ${emp.name || emp.fullName}`}
-
-                            onClick={() => handleView(emp)}
-
-                            style={{
-
-                              border: '1px solid #d8e2e1',
-
-                              width: '32px',
-
-                              height: '32px',
-
-                              borderRadius: '6px',
-
-                              color: '#167c78',
-
-                              background: '#fff',
-
-                            }}
-
-                          >
-
-                            <Eye size={15} />
-
-                          </button>
-
-                          <button
-
-                            type="button"
-
-                            className="icon-button"
-
-                            title="Edit Employee"
-
-                            aria-label={`Edit ${emp.name || emp.fullName}`}
-
-                            onClick={() => handleEdit(emp)}
-
-                            style={{
-
-                              border: '1px solid #d8e2e1',
-
-                              width: '32px',
-
-                              height: '32px',
-
-                              borderRadius: '6px',
-
-                              color: '#2563eb',
-
-                              background: '#fff',
-
-                            }}
-
-                          >
-
-                            <Edit3 size={15} />
-
-                          </button>
-                          </PermissionGate>
-
-                      </div>
-
-                    </td> */}
+                    <td style={{ padding: '8px', textAlign: 'center' }}>
+                      <PermissionGate module="user-management" action="edit">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          title="Edit Employee"
+                          aria-label={`Edit ${emp.name || emp.fullName}`}
+                          onClick={() => handleEdit(emp)}
+                          style={{
+                            display: 'inline-grid',
+                            placeItems: 'center',
+                            width: '32px',
+                            height: '32px',
+                            border: '1px solid #d8e2e1',
+                            borderRadius: '6px',
+                            color: '#167c78',
+                            background: '#fff',
+                          }}
+                        >
+                          <Edit3 size={15} aria-hidden="true" />
+                        </button>
+                      </PermissionGate>
+                    </td>
 
                   </tr>
 

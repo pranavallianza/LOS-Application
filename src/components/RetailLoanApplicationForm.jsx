@@ -3,13 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  BarChart3,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Landmark,
   Plus,
+  ShieldCheck,
   Trash2,
   Upload,
+  UserRound,
+  UsersRound,
+  WalletCards,
 } from 'lucide-react';
 import AppShell from './AppShell';
 import Card from './Card';
@@ -31,6 +37,17 @@ const RETAIL_STEPS = [
   'Insurance Details',
   'Disbursement',
 ];
+const RETAIL_STEP_ICONS = [
+  UserRound,
+  UsersRound,
+  Landmark,
+  BarChart3,
+  WalletCards,
+  ShieldCheck,
+  WalletCards,
+  Landmark,
+];
+const REPAYMENT_PAGE_SIZE = 12;
 
 let nextPartySequence = 1;
 const blankRelatedParty = () => ({
@@ -60,6 +77,31 @@ function dateAfter(value) {
   return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
 }
 
+function addMonthsToDate(value, months) {
+  if (!isValidDate(value) || !Number.isInteger(months)) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const targetMonth = year * 12 + month - 1 + months;
+  const targetYear = Math.floor(targetMonth / 12);
+  const targetMonthIndex = targetMonth % 12;
+  const lastDay = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+  return `${targetYear}-${String(targetMonthIndex + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function calculateInstalmentEndDate(startDate, tenureMonths) {
+  const tenure = Number(tenureMonths);
+  if (!String(tenureMonths ?? '').trim() || !Number.isInteger(tenure) || tenure <= 0) return '';
+  return addMonthsToDate(startDate, tenure);
+}
+
+function formatDateText(value) {
+  if (!isValidDate(value)) return '';
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
 function getTodayDate() {
   const today = new Date();
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -74,7 +116,6 @@ const ADDRESS_PATTERN = /^[\p{L}\p{M}0-9][\p{L}\p{M}0-9 .,'&#()/:+-]*$/u;
 const REMARKS_PATTERN = /^[\p{L}\p{M}0-9 .,'&#()/:+-]*$/u;
 const INPUT_VALIDATION = {
   loanAccountNumber: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
-  customerId: [CODE_INPUT_PATTERN, 'Use letters, numbers, hyphens, and underscores only.'],
   firstName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
   middleName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
   lastName: [NAME_INPUT_PATTERN, 'Use letters, spaces, apostrophes, or hyphens only.'],
@@ -166,6 +207,36 @@ function calculateTotalInterestRate(interestRate, offsetRate) {
   return String(Math.round(total * 100) / 100);
 }
 
+export function calculateInstalmentAmount(loanAmount, tenureMonths, totalInterestRate) {
+  const amountText = String(loanAmount ?? '').trim();
+  const tenureText = String(tenureMonths ?? '').trim();
+  const rateText = String(totalInterestRate ?? '').trim();
+  const amount = Number(amountText);
+  const tenure = Number(tenureText);
+  const annualRate = Number(rateText);
+
+  if (
+    !amountText
+    || !tenureText
+    || !rateText
+    || !Number.isFinite(amount)
+    || amount <= 0
+    || !Number.isInteger(tenure)
+    || tenure <= 0
+    || !isValidPercentage(rateText)
+    || !Number.isFinite(annualRate)
+  ) {
+    return '';
+  }
+
+  const monthlyRate = annualRate / 1200;
+  const payment = monthlyRate === 0
+    ? amount / tenure
+    : amount * monthlyRate / (1 - ((1 + monthlyRate) ** -tenure));
+
+  return Number.isFinite(payment) ? payment.toFixed(2) : '';
+}
+
 function validateText(value, label, { required = false, minLength = 3, maxLength = 50, pattern = TEXT_PATTERN } = {}) {
   const text = String(value ?? '').trim();
   if (!text) return required ? `${label} is required.` : '';
@@ -240,6 +311,19 @@ function validateRelatedParty(party, index) {
   errors[`${prefix}middleName`] = validateText(party.middleName, 'Middle name', { pattern: NAME_PATTERN });
   errors[`${prefix}lastName`] = validateText(party.lastName, 'Last name', { required: true, pattern: NAME_PATTERN });
   return Object.fromEntries(Object.entries(errors).filter(([, error]) => error));
+}
+
+function getRelatedPartyFieldLabel(field) {
+  const labels = {
+    nameType: 'Name Type',
+    relation: 'Relation',
+    customerNo: 'Customer No',
+    salutation: 'Salutation',
+    firstName: 'First Name',
+    middleName: 'Middle Name',
+    lastName: 'Last Name',
+  };
+  return labels[field] || field;
 }
 
 function validateDisbursementField(form, field, fieldValue = form[field]) {
@@ -447,6 +531,15 @@ export function createInitialRetailLoanForm(application) {
 
   if (!mergedForm.relatedParties.length) mergedForm.relatedParties = [blankRelatedParty()];
   mergedForm.totalInterestRate = calculateTotalInterestRate(mergedForm.interestRate, mergedForm.offsetRate);
+  mergedForm.instalmentAmount = calculateInstalmentAmount(
+    mergedForm.loanAmount,
+    mergedForm.tenureMonths,
+    mergedForm.totalInterestRate,
+  );
+  mergedForm.instalmentEndDate = calculateInstalmentEndDate(
+    mergedForm.instalmentStartDate,
+    mergedForm.tenureMonths,
+  );
   mergedForm.securityValue = getSynchronizedSecurityValue(mergedForm.securityAmount);
   return mergedForm;
 }
@@ -492,7 +585,9 @@ function RetailField({
 }) {
   const [inputError, setInputError] = useState('');
   const inputId = `field-${name}`;
-  const fieldError = inputError || error;
+  const fieldError = inputError || error
+    ? `Enter valid ${label}.`
+    : '';
   useEffect(() => {
     setInputError('');
   }, [value]);
@@ -590,7 +685,10 @@ function RetailField({
 export function getRepaymentRows(form) {
   const amount = Number(form.loanAmount);
   const tenure = Number(form.tenureMonths);
-  const annualRate = Number(form.totalInterestRate || form.interestRate);
+  const totalRate = String(form.totalInterestRate ?? '').trim()
+    ? form.totalInterestRate
+    : calculateTotalInterestRate(form.interestRate, form.offsetRate);
+  const annualRate = Number(totalRate);
   if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(tenure) || tenure <= 0) {
     return [];
   }
@@ -598,26 +696,26 @@ export function getRepaymentRows(form) {
   const monthlyRate = Number.isFinite(annualRate) && annualRate > 0
     ? annualRate / 1200
     : 0;
-  const enteredInstalment = Number(form.instalmentAmount);
-  const instalment = Number.isFinite(enteredInstalment) && enteredInstalment > 0
-    ? enteredInstalment
-    : monthlyRate
-      ? amount * monthlyRate / (1 - ((1 + monthlyRate) ** -tenure))
-      : amount / tenure;
+  const instalment = Number(calculateInstalmentAmount(amount, tenure, totalRate));
+  if (!Number.isFinite(instalment) || instalment <= 0) return [];
   const start = form.instalmentStartDate ? new Date(`${form.instalmentStartDate}T00:00:00`) : null;
-  let balance = amount;
+  const roundToCents = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
+  let balance = roundToCents(amount);
 
-  return Array.from({ length: Math.min(tenure, 120) }, (_, index) => {
-    const interest = balance * monthlyRate;
-    const principal = Math.min(balance, Math.max(0, instalment - interest));
-    const currentBalance = Math.max(0, balance - principal);
-    const date = start ? new Date(start.getFullYear(), start.getMonth() + index, start.getDate()) : null;
+  return Array.from({ length: tenure }, (_, index) => {
+    const interest = roundToCents(balance * monthlyRate);
+    const principal = index === tenure - 1
+      ? balance
+      : Math.min(balance, Math.max(0, roundToCents(instalment - interest)));
+    const currentBalance = roundToCents(Math.max(0, balance - principal));
+    const dateValue = start ? addMonthsToDate(form.instalmentStartDate, index) : '';
+    const date = dateValue ? new Date(`${dateValue}T00:00:00`) : null;
     balance = currentBalance;
     return {
       month: date
         ? date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
         : index + 1,
-      instalment: Math.min(instalment, principal + interest),
+      instalment: roundToCents(principal + interest),
       interest,
       principal,
       balance: currentBalance,
@@ -650,12 +748,31 @@ export default function RetailLoanApplicationForm({
   const [basicLookupOptions, setBasicLookupOptions] = useState({});
   const [basicLookupNotice, setBasicLookupNotice] = useState('');
   const [basicLookupsLoading, setBasicLookupsLoading] = useState(true);
+  const [repaymentPage, setRepaymentPage] = useState(0);
   const submissionLock = useRef(false);
   const repaymentRows = useMemo(() => getRepaymentRows(form), [form]);
+  const repaymentPageCount = Math.ceil(repaymentRows.length / REPAYMENT_PAGE_SIZE);
+  const repaymentPageIndex = Math.min(repaymentPage, Math.max(0, repaymentPageCount - 1));
+  const repaymentPageStart = repaymentPageIndex * REPAYMENT_PAGE_SIZE;
+  const visibleRepaymentRows = repaymentRows.slice(
+    repaymentPageStart,
+    repaymentPageStart + REPAYMENT_PAGE_SIZE,
+  );
   const currentRelatedParty = form.relatedParties[currentPartyIndex];
   const canAddRelatedParty = Boolean(
     currentRelatedParty && Object.keys(validateRelatedParty(currentRelatedParty, currentPartyIndex)).length === 0,
   );
+
+  useEffect(() => {
+    setRepaymentPage(0);
+  }, [
+    form.loanAmount,
+    form.tenureMonths,
+    form.interestRate,
+    form.offsetRate,
+    form.instalmentAmount,
+    form.instalmentStartDate,
+  ]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -770,6 +887,21 @@ export default function RetailLoanApplicationForm({
         name === 'offsetRate' ? value : form.offsetRate,
       );
       changedFields.add('totalInterestRate');
+    }
+    if (['loanAmount', 'tenureMonths', 'interestRate', 'offsetRate'].includes(name)) {
+      nextForm.instalmentAmount = calculateInstalmentAmount(
+        nextForm.loanAmount,
+        nextForm.tenureMonths,
+        nextForm.totalInterestRate,
+      );
+      changedFields.add('instalmentAmount');
+    }
+    if (name === 'tenureMonths' || name === 'instalmentStartDate') {
+      nextForm.instalmentEndDate = calculateInstalmentEndDate(
+        nextForm.instalmentStartDate,
+        nextForm.tenureMonths,
+      );
+      changedFields.add('instalmentEndDate');
     }
     if (name === 'securityAmount') {
       nextForm.securityValue = getSynchronizedSecurityValue(value);
@@ -897,18 +1029,14 @@ export default function RetailLoanApplicationForm({
     if (step === 0) {
       putError('loanAccountNumber', validateCode(values.loanAccountNumber, 'Loan account number', { required: true }));
       putError('effectiveDate', validateDate(values.effectiveDate, 'Effective date', true));
-      putError('customerId', !String(values.customerId ?? '').trim()
-        ? 'Customer ID is required.'
-        : /^CUS-\d{4}-\d{5}$/.test(String(values.customerId).trim())
-          ? ''
-          : 'Use customer ID format CUS-YYYY-NNNNN.');
+      if (!String(values.customerId ?? '').trim()) next.customerId = 'Customer ID is required.';
       if (!['Mr', 'Mrs', 'Ms', 'Dr', 'Other'].includes(values.title)) next.title = 'Select a valid title.';
       putError('firstName', validateText(values.firstName, 'First name', { required: true, pattern: NAME_PATTERN }));
       putError('middleName', validateText(values.middleName, 'Middle name', { pattern: NAME_PATTERN }));
       putError('lastName', validateText(values.lastName, 'Last name', { required: true, pattern: NAME_PATTERN }));
       putError('productCode', validateCode(values.productCode, 'Product code', { required: true }));
       putError('productName', validateText(values.productName, 'Product description', { required: true }));
-      putError('branch', validateText(values.branch, 'Branch', { minLength: 2 }));
+      putError('branch', validateText(values.branch, 'Branch', { minLength: 2, maxLength: 50 }));
       if (!ACCOUNT_STATUS_OPTIONS.includes(values.accountStatus)) next.accountStatus = 'Select a valid account status.';
       if (!MODE_OF_OPERATION_OPTIONS.includes(values.modeOfOperation)) next.modeOfOperation = 'Select a valid mode of operation.';
       putError('lastTransactionDate', validateDate(values.lastTransactionDate, 'Last transaction date', true));
@@ -966,10 +1094,6 @@ export default function RetailLoanApplicationForm({
       if (isValidDate(values.instalmentStartDate) && isValidDate(values.instalmentEndDate)
         && values.instalmentEndDate < values.instalmentStartDate) {
         next.instalmentEndDate = 'Instalment end date cannot precede the start date.';
-      }
-      if (isValidDate(values.expiryDate) && isValidDate(values.instalmentEndDate)
-        && values.instalmentEndDate > values.expiryDate) {
-        next.instalmentEndDate = 'Instalment end date cannot be after the expiry date.';
       }
     }
 
@@ -1243,6 +1367,7 @@ export default function RetailLoanApplicationForm({
               {RETAIL_STEPS.map((step, index) => {
                 const isCurrent = index === currentStep;
                 const isComplete = index < currentStep;
+                const StepIcon = RETAIL_STEP_ICONS[index];
                 return (
                   <button
                     type="button"
@@ -1253,7 +1378,7 @@ export default function RetailLoanApplicationForm({
                     aria-label={`Step ${index + 1}: ${step}${isComplete ? ', completed' : ''}`}
                   >
                     <span className="retail-step-circle">
-                      {isComplete ? <Check size={14} strokeWidth={2.5} aria-hidden="true" /> : index + 1}
+                      <StepIcon size={14} strokeWidth={2} aria-hidden="true" />
                     </span>
                     <span className="retail-step-title">{step}</span>
                   </button>
@@ -1279,7 +1404,7 @@ export default function RetailLoanApplicationForm({
                 <section className="retail-section-card retail-form-rows">
                   <div className="retail-grid four-column">
                     {input('Loan Account No', 'loanAccountNumber', { required: true, maxLength: 30, placeholder: 'e.g. RL-2026-001' })}
-                    {input('Customer ID', 'customerId', { required: true, maxLength: 14, placeholder: 'CUS-YYYY-NNNNN' })}
+                    {input('Customer ID', 'customerId', { required: true, placeholder: 'Enter customer ID' })}
                     {input('Branch', 'branch', { maxLength: 50, placeholder: 'Branch code or location' })}
                     {input('Effective Date', 'effectiveDate', { type: 'date', required: true })}
                   </div>
@@ -1407,7 +1532,7 @@ export default function RetailLoanApplicationForm({
                                     id={`related-party-${index}-${field}-error`}
                                     role="alert"
                                   >
-                                    {errors[`relatedParties.${index}.${field}`]}
+                                    {`Enter valid ${getRelatedPartyFieldLabel(field)}.`}
                                   </small>
                                 )}
                               </td>
@@ -1466,66 +1591,80 @@ export default function RetailLoanApplicationForm({
                     {input('Bullet Payment (₹)', 'bulletPayment', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
                   </div>
                   <div className="retail-grid four-column">
-                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true, placeholder: 'Calculated automatically' })}
                     {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
-                    {input('Instalment End Date', 'instalmentEndDate', { className: 'column-four', type: 'date', min: form.instalmentStartDate, max: form.expiryDate, required: true })}
+                    {input('Instalment End Date', 'instalmentEndDate', { className: 'column-four retail-installment-end-date', type: 'text', value: formatDateText(form.instalmentEndDate), readOnly: true, required: true })}
                   </div>
                 </section>
               )}
 
               {/* Step 3: Repayment Chart */}
               {currentStep === 3 && (
-                <div className="retail-sections-stack">
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Repayment Calculation Parameters</h3>
-                    </div>
-                    <div className="retail-grid three-column">
-                      {input('Loan Amount (₹)', 'loanAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                      {input('Tenure (months)', 'tenureMonths', { type: 'number', min: '1', max: '600', step: '1', required: true, placeholder: 'Months' })}
-                      {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
-                    </div>
-                  </section>
-
-                  <section className="retail-section-card">
-                    <div className="retail-section-header">
-                      <h3 className="retail-section-title">Amortisation Schedule Forecast</h3>
-                      <p className="retail-section-subtitle">Estimated monthly principal, interest, and remaining balance breakdown.</p>
-                    </div>
-                    <div className="retail-table-wrap">
-                      <table className="retail-data-table chart-table">
-                        <thead>
-                          <tr>
-                            <th>Month</th>
-                            <th>Principal Amount (₹)</th>
-                            <th>Instalment Amt (₹)</th>
-                            <th>Interest (₹)</th>
-                            <th>Principal (₹)</th>
-                            <th>Balance Amount (₹)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {repaymentRows.length ? repaymentRows.map((row, index) => (
-                            <tr key={`${row.month}-${index}`}>
+                <section className="retail-section-card">
+                  <div className="retail-section-header">
+                    <h3 className="retail-section-title">Repayment Chart</h3>
+                  </div>
+                  <div className="retail-table-wrap">
+                    <table className="retail-data-table chart-table">
+                      <thead>
+                        <tr>
+                          <th>Month</th>
+                          <th>Principal Amount (₹)</th>
+                          <th>Instalment Amt (₹)</th>
+                          <th>Interest (₹)</th>
+                          <th>Principal (₹)</th>
+                          <th>Balance Amount (₹)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {repaymentRows.length ? visibleRepaymentRows.map((row, index) => {
+                          const rowIndex = repaymentPageStart + index;
+                          return (
+                            <tr key={rowIndex}>
                               <td className="row-number">{row.month}</td>
-                              <td>{formatRupees(index === 0 ? Number(form.loanAmount) : repaymentRows[index - 1].balance)}</td>
+                              <td>{formatRupees(rowIndex === 0 ? Number(form.loanAmount) : repaymentRows[rowIndex - 1].balance)}</td>
                               <td>{formatRupees(row.instalment)}</td>
                               <td>{formatRupees(row.interest)}</td>
                               <td>{formatRupees(row.principal)}</td>
                               <td><strong>{formatRupees(row.balance)}</strong></td>
                             </tr>
-                          )) : (
-                            <tr>
-                              <td colSpan="6" className="table-empty-cell">
-                                Enter a valid loan amount and tenure above to generate the repayment schedule.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                </div>
+                          );
+                        }) : (
+                          <tr>
+                            <td colSpan="6" className="table-empty-cell">
+                              Enter a valid loan amount and tenure above to generate the repayment schedule.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {repaymentPageCount > 1 && (
+                    <nav className="retail-repayment-pagination" aria-label="Repayment schedule pages">
+                      <button
+                        type="button"
+                        className="retail-btn-secondary"
+                        onClick={() => setRepaymentPage((page) => Math.max(0, page - 1))}
+                        disabled={repaymentPageIndex === 0}
+                      >
+                        Previous
+                      </button>
+                      <span aria-live="polite">
+                        Showing {repaymentPageStart + 1}-
+                        {Math.min(repaymentPageStart + REPAYMENT_PAGE_SIZE, repaymentRows.length)}
+                        {' '}of {repaymentRows.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="retail-btn-secondary"
+                        onClick={() => setRepaymentPage((page) => Math.min(repaymentPageCount - 1, page + 1))}
+                        disabled={repaymentPageIndex >= repaymentPageCount - 1}
+                      >
+                        Next
+                      </button>
+                    </nav>
+                  )}
+                </section>
               )}
 
               {/* Step 4: Basic Details */}
@@ -1608,7 +1747,7 @@ export default function RetailLoanApplicationForm({
                         />
                       </label>
                       {errors.inspectionReportName && (
-                        <span className="retail-field-error-text" role="alert">{errors.inspectionReportName}</span>
+                        <span className="retail-field-error-text" role="alert">Enter valid Inspection Report.</span>
                       )}
                     </div>
                   </div>
@@ -1858,7 +1997,7 @@ export default function RetailLoanApplicationForm({
           overflow-x: auto;
           overflow-y: hidden;
           padding: 2px 2px 16px;
-          border-bottom: 1px solid #e5ecec;
+          border-bottom: 0;
           scrollbar-width: thin;
           -webkit-overflow-scrolling: touch;
         }
@@ -1867,12 +2006,12 @@ export default function RetailLoanApplicationForm({
           display: inline-flex;
           flex: 0 0 auto;
           align-items: center;
-          gap: 9px;
-          padding: 8px 14px;
-          border: 1px solid transparent;
+          gap: 7px;
+          padding: 7px 12px;
+          border: 1px solid #d5e5dc;
           border-radius: 8px;
-          background: transparent;
-          color: #60747a;
+          background: #fff;
+          color: #245c47;
           font-family: inherit;
           font-size: 11px;
           font-weight: 600;
@@ -1882,14 +2021,15 @@ export default function RetailLoanApplicationForm({
         }
 
         .retail-step-item:hover {
-          background: #f7fafb;
-          color: #1d3b48;
+          border-color: #c8e5d2;
+          background: #e7f5ec;
+          color: #245c47;
         }
 
         .retail-step-item.active {
-          border-color: #cfe1df;
-          color: #165f5c;
-          background: #edf6f4;
+          border-color: #c8e5d2;
+          color: #245c47;
+          background: #e7f5ec;
         }
 
         .retail-step-item.complete {
@@ -1898,29 +2038,30 @@ export default function RetailLoanApplicationForm({
 
         .retail-step-circle {
           display: grid;
-          width: 26px;
-          height: 26px;
-          flex: 0 0 26px;
+          width: 24px;
+          height: 24px;
+          flex: 0 0 24px;
           place-items: center;
           border: 1px solid #d7e2e3;
-          border-radius: 50%;
-          background: #fff;
-          color: #657b81;
-          font-size: 10px;
+          border: 0;
+          border-radius: 7px;
+          background: #368262;
+          color: #fff;
+          font-size: 11px;
           font-weight: 700;
           transition: all .15s ease;
         }
 
         .retail-step-item.active .retail-step-circle {
-          border-color: #177e7a;
-          background: #177e7a;
+          border: 0;
+          background: #368262;
           color: #fff;
         }
 
         .retail-step-item.complete .retail-step-circle {
-          border-color: #b8dfd3;
-          background: #e5f5ef;
-          color: #26795f;
+          border: 0;
+          background: #368262;
+          color: #fff;
         }
 
         .retail-step-title {
@@ -2098,7 +2239,7 @@ export default function RetailLoanApplicationForm({
           padding: 0 10px;
           border: 1px solid #d7e2e5;
           border-radius: 8px;
-          background: #f8fbfc;
+          background: #fff;
           color: #1b3541;
           font-family: inherit;
           font-size: 12px;
@@ -2120,6 +2261,12 @@ export default function RetailLoanApplicationForm({
           min-height: 40px;
           font-family: inherit;
           font-size: 12px;
+        }
+
+        :global(.retail-installment-end-date .retail-input-control:read-only) {
+          background: #fff;
+          color: #1b3541;
+          cursor: default;
         }
 
         .retail-compact-details :global(.retail-field .lead-calendar-picker .lead-date-picker-trigger) {
@@ -2254,12 +2401,37 @@ export default function RetailLoanApplicationForm({
           vertical-align: middle;
         }
 
+        .retail-data-table.chart-table th,
+        .retail-data-table.chart-table td {
+          text-align: center;
+        }
+
         .retail-data-table tbody tr:last-child td {
           border-bottom: none;
         }
 
         .retail-data-table tbody tr:hover {
           background: #fafcfd;
+        }
+
+        .retail-repayment-pagination {
+          display: flex;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 12px;
+          margin-top: 14px;
+          color: #708087;
+          font-size: 12px;
+        }
+
+        .retail-repayment-pagination .retail-btn-secondary {
+          min-height: 34px;
+          padding: 0 12px;
+        }
+
+        .retail-repayment-pagination .retail-btn-secondary:disabled {
+          opacity: .55;
+          cursor: not-allowed;
         }
 
         .row-number {
@@ -2495,6 +2667,11 @@ export default function RetailLoanApplicationForm({
         @media (max-width: 540px) {
           :global(.loan-application-card) {
             padding: 14px 12px;
+          }
+
+          .retail-repayment-pagination {
+            justify-content: center;
+            flex-wrap: wrap;
           }
 
           .retail-section-card {
