@@ -201,7 +201,7 @@ export default function RuleEngine() {
             <h1
               style={{ margin: 0, color: "#23474C", font: "700 23px Manrope" }}
             >
-              Rule Engine
+              
             </h1>
           </div>
           <span className="rl-badge big">{rules.length} rules</span>

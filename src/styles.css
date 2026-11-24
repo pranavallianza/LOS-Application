@@ -3076,18 +3076,32 @@ td strong {
   .los-page-wrap:has(.pm-wrap),
   .los-page-wrap:has(.customer-dashboard),
   .los-page-wrap:has(.customer-onboarding-shell),
-  .los-page-wrap:has(.user-management-page) {
+  .los-page-wrap:has(.user-management-page),
+  .los-page-wrap:has(.bank-master-page),
+  .los-page-wrap:has(.rl-page),
+  .los-page-wrap:has(.irm-wrap),
+  .los-page-wrap:has(.grm-wrap),
+  .los-page-wrap:has(.lookup-page),
+  .los-page-wrap:has(.employee-details-page),
+  .los-page-wrap:has(.eligibility-page) {
     max-width: none;
   }
 
   .customer-dashboard,
-  .customer-onboarding-shell,
-  .user-management-page {
+  .customer-onboarding-shell {
     box-sizing: border-box;
     max-width: 1560px;
     margin-right: auto;
     margin-left: auto;
   }
+}
+.user-management-page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin-right: auto;
+  margin-left: auto;
 }
 .bank-branch-heading {
   display: flex;
@@ -5660,6 +5674,9 @@ td strong {
   gap: 18px 24px;
   max-width: 900px;
 }
+.bank-master-field-full {
+  grid-column: 1 / -1;
+}
 .bank-master-field {
   display: flex;
   min-width: 0;
@@ -6685,6 +6702,30 @@ td strong {
     gap: 6px;
   }
 }
+.los-page-wrap .irm-wrap,
+.los-page-wrap .eligibility-page {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+.employee-details-page {
+  width: 100%;
+  min-width: 0;
+  margin: 0 auto;
+}
+.employee-details-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 22px;
+}
+.employee-details-page .form-card {
+  min-width: 0;
+}
+.employee-details-page .form-card strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
 
 .page-header-marquee {
   width: min(100%, 560px);
@@ -6749,10 +6790,18 @@ td strong {
 @media(prefers-reduced-motion:reduce){.header-page-search-control,.header-page-search-result,.header-page-search-chevron{transition:none}.header-page-search-results{animation:none}}
 
 .bank-master-page {
+  box-sizing: border-box;
   width: 100%;
+  min-width: 0;
   max-width: 1280px;
   margin: 0 auto;
   padding: 0 clamp(12px, 2vw, 24px) 32px;
+}
+.bank-master-content {
+  width: 100%;
+  min-width: 0;
+  max-width: 1160px;
+  margin: 0 auto;
 }
 .bank-master-page .page-header {
   max-width: 1160px;
@@ -6760,6 +6809,9 @@ td strong {
   margin: 0 auto 24px;
 }
 .bank-master-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   max-width: 1160px;
   margin: 0 auto;
   border-color: #d9e5e2;
@@ -6793,6 +6845,12 @@ td strong {
   margin: 0 auto;
   padding: 24px 34px 30px;
 }
+.bank-master-panel-address {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 520px;
+  align-content: center;
+}
 .bank-master-panel-heading {
   max-width: 960px;
   margin: 0 auto 26px;
@@ -6802,6 +6860,10 @@ td strong {
   max-width: 850px;
   margin: 0 auto;
   gap: 20px 28px;
+}
+.bank-master-address-fields {
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .bank-master-field select {
   width: 100%;
@@ -6888,27 +6950,6 @@ td strong {
   border-radius: 6px;
   background: #fff;
 }
-.bank-master-account-empty {
-  display: grid;
-  justify-items: center;
-  gap: 9px;
-  padding: 38px 18px;
-  border: 1px dashed #cbdad6;
-  border-radius: 9px;
-  background: #fbfdfc;
-  color: #718689;
-  text-align: center;
-}
-.bank-master-account-empty svg {
-  color: #418a7b;
-}
-.bank-master-account-empty strong {
-  color: #345553;
-  font-size: 13px;
-}
-.bank-master-account-empty span {
-  font-size: 11px;
-}
 .bank-master-account-pagination {
   display: flex;
   align-items: center;
@@ -6973,6 +7014,9 @@ td strong {
   }
   .bank-master-fields {
     gap: 15px;
+  }
+  .bank-master-address-fields {
+    grid-template-columns: 1fr;
   }
   .bank-master-readonly-grid {
     grid-template-columns: 1fr !important;
@@ -7058,6 +7102,11 @@ td strong {
 }
 .bank-master-account-table tbody tr:last-child td {
   border-bottom: 0;
+}
+.bank-master-account-empty-cell {
+  padding: 22px 14px !important;
+  color: #718689;
+  text-align: center !important;
 }
 .bank-master-account-actions {
   display: flex;

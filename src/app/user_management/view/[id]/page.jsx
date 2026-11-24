@@ -42,7 +42,7 @@ export default function ViewUserPage() {
   if (loading) {
     return (
       <AppShell title="Employee Details">
-        <div style={{ padding: '60px 0', textAlign: 'center', color: '#7a8e91' }}>
+        <div className="employee-details-page" style={{ padding: '60px 0', textAlign: 'center', color: '#7a8e91' }}>
           Loading employee details...
         </div>
       </AppShell>
@@ -52,37 +52,39 @@ export default function ViewUserPage() {
   if (!employee) {
     return (
       <AppShell title="Employee Not Found">
-        <Card style={{ padding: '36px', textAlign: 'center', maxWidth: '560px', margin: '40px auto' }}>
-          <div
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              background: '#fef2f2',
-              color: '#dc2626',
-              display: 'grid',
-              placeItems: 'center',
-              margin: '0 auto 16px',
-            }}
-          >
-            <AlertCircle size={26} />
-          </div>
-          <h2 style={{ fontSize: '18px', color: '#173e46', margin: '0 0 8px' }}>
-            Employee Record Not Found
-          </h2>
-          <p style={{ color: '#7a8e91', fontSize: '13px', margin: '0 0 24px' }}>
-            The requested employee identifier could not be located in the directory.
-          </p>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => router.push('/user_management')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-          >
-            <ArrowLeft size={16} />
-            Return to User Management
-          </button>
-        </Card>
+        <div className="employee-details-page">
+          <Card style={{ padding: '36px', textAlign: 'center', maxWidth: '560px', margin: '40px auto' }}>
+            <div
+              style={{
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                background: '#fef2f2',
+                color: '#dc2626',
+                display: 'grid',
+                placeItems: 'center',
+                margin: '0 auto 16px',
+              }}
+            >
+              <AlertCircle size={26} />
+            </div>
+            <h2 style={{ fontSize: '18px', color: '#173e46', margin: '0 0 8px' }}>
+              Employee Record Not Found
+            </h2>
+            <p style={{ color: '#7a8e91', fontSize: '13px', margin: '0 0 24px' }}>
+              The requested employee identifier could not be located in the directory.
+            </p>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => router.push('/user_management')}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <ArrowLeft size={16} />
+              Return to User Management
+            </button>
+          </Card>
+        </div>
       </AppShell>
     );
   }
@@ -92,6 +94,7 @@ export default function ViewUserPage() {
 
   return (
     <AppShell title={`Employee: ${fullName}`}>
+      <div className="employee-details-page">
       <PageHeader
         eyebrow="EMPLOYEE DIRECTORY"
         title={fullName}
@@ -192,7 +195,7 @@ export default function ViewUserPage() {
       </div>
 
       {/* Grid of Sections */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '22px' }}>
+      <div className="employee-details-grid">
         {/* SECTION 1: Employee and Personal Information */}
         <div className="form-card" style={{ marginBottom: 0 }}>
           <div className="form-card-title">
@@ -378,6 +381,7 @@ export default function ViewUserPage() {
         >
           <ArrowLeft size={16} />
         </button>
+      </div>
       </div>
     </AppShell>
   );
