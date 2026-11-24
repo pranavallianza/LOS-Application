@@ -70,11 +70,36 @@ function isValidDate(value) {
     && date.getDate() === day;
 }
 
-function dateAfter(value) {
-  if (!isValidDate(value)) return '';
-  const [year, month, day] = value.split('-').map(Number);
-  const nextDate = new Date(year, month - 1, day + 1);
-  return `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`;
+function isValidMonthValue(value) {
+  return /^\d{4}-\d{2}$/.test(String(value || '').trim());
+}
+
+function normalizeMoratoriumMonthValue(value) {
+  const text = String(value || '').trim();
+  if (isValidMonthValue(text)) return `${text}-01`;
+  if (isValidDate(text)) return `${text.slice(0, 7)}-01`;
+  return '';
+}
+
+function getMoratoriumMonthInputValue(value) {
+  const text = String(value || '').trim();
+  if (isValidMonthValue(text)) return text;
+  if (isValidDate(text)) return text.slice(0, 7);
+  return '';
+}
+
+function formatMoratoriumMonthText(value) {
+  const monthValue = getMoratoriumMonthInputValue(value);
+  if (!monthValue) return '';
+  return new Date(`${monthValue}-01T00:00:00`).toLocaleDateString('en-IN', {
+    month: 'long',
+  });
+}
+
+function getFutureMonthMinValue() {
+  const now = new Date();
+  const futureMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  return `${futureMonth.getFullYear()}-${String(futureMonth.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function addMonthsToDate(value, months) {
@@ -87,10 +112,142 @@ function addMonthsToDate(value, months) {
   return `${targetYear}-${String(targetMonthIndex + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
 }
 
-function calculateInstalmentEndDate(startDate, tenureMonths) {
+function calculateInstalmentEndDate(startDate, tenureMonths, frequency = 'Monthly') {
+  const periods = getInstalmentPeriods(tenureMonths, frequency);
+  if (!isValidDate(startDate) || !periods.length) return '';
+  if (periods.length === 1) return startDate;
+  return addMonthsToDate(startDate, periods.slice(0, -1).reduce((total, months) => total + months, 0));
+}
+
+function applyEmiFixDateDay(value, fixDate) {
+  if (!isValidDate(value)) return '';
+  if (fixDate === '5' || fixDate === '10') {
+    const [year, month] = value.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const day = Math.min(Number(fixDate), lastDay);
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  if (fixDate === 'Current Date') {
+    const [year, month] = value.split('-').map(Number);
+    const currentDay = Number(getTodayDate().split('-')[2]);
+    const lastDay = new Date(year, month, 0).getDate();
+    const day = Math.min(Number.isInteger(currentDay) && currentDay > 0 ? currentDay : 1, lastDay);
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  return value;
+}
+
+function calculateInstalmentStartDate(sanctionedDate, fixDate) {
+  if (!isValidDate(sanctionedDate)) return '';
+  if (fixDate === 'Current Date') {
+    const today = getTodayDate();
+    return today < sanctionedDate ? sanctionedDate : today;
+  }
+  const day = Number(fixDate);
+  if (![5, 10].includes(day)) return '';
+  const [year, month, sanctionDay] = sanctionedDate.split('-').map(Number);
+  const candidateDay = Math.max(day, 1);
+  const candidate = `${year}-${String(month).padStart(2, '0')}-${String(candidateDay).padStart(2, '0')}`;
+  if (sanctionDay <= day) return candidate;
+  return addMonthsToDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, 1);
+}
+
+function isMoratoriumPeriodConfigured(form) {
+  return form.emiApplicable === 'Yes'
+    && form.moratoriumApplicable === 'Yes'
+    && Number.isInteger(Number(form.moratoriumMonths))
+    && Number(form.moratoriumMonths) > 0;
+}
+
+function isInstallmentScheduleDelayedByMoratorium(form) {
+  return isMoratoriumPeriodConfigured(form) && form.interestMoratorium === 'Yes';
+}
+
+function getMoratoriumFromDate(form) {
+  if (!isMoratoriumPeriodConfigured(form)) return '';
+  const selectedFrom = normalizeMoratoriumMonthValue(form.moratoriumFrom);
+  if (isValidDate(selectedFrom)) return selectedFrom;
+  if (!isValidDate(form.sanctionedDate)) return '';
+  return normalizeMoratoriumMonthValue(addMonthsToDate(form.sanctionedDate, 1));
+}
+
+function getMoratoriumEndMonthDate(form) {
+  const moratoriumFrom = normalizeMoratoriumMonthValue(form.moratoriumFrom || getMoratoriumFromDate(form));
+  const months = Number(form.moratoriumMonths);
+  if (!isValidDate(moratoriumFrom) || !Number.isInteger(months) || months <= 0) return '';
+  return normalizeMoratoriumMonthValue(addMonthsToDate(moratoriumFrom, months - 1));
+}
+
+function calculateMoratoriumToDate(form) {
+  return getMoratoriumEndMonthDate(form);
+}
+
+function getMoratoriumToDate(form) {
+  const selectedTo = normalizeMoratoriumMonthValue(form.moratoriumEndDate);
+  if (isMoratoriumPeriodConfigured(form) && isValidDate(selectedTo)) return selectedTo;
+  return calculateMoratoriumToDate(form);
+}
+
+function getMoratoriumEndDate(sanctionedDate, moratoriumMonths) {
+  const fromDate = isValidDate(sanctionedDate)
+    ? normalizeMoratoriumMonthValue(addMonthsToDate(sanctionedDate, 1))
+    : '';
+  const months = Number(moratoriumMonths);
+  if (!isValidDate(fromDate) || !Number.isInteger(months) || months <= 0) return '';
+  return normalizeMoratoriumMonthValue(addMonthsToDate(fromDate, months - 1));
+}
+
+function hasActiveMoratorium(form) {
+  return isMoratoriumPeriodConfigured(form)
+    && (form.principalMoratorium === 'Yes' || form.interestMoratorium === 'Yes');
+}
+
+function hasPaymentDuringMoratorium(form) {
+  if (!isMoratoriumPeriodConfigured(form)) return false;
+  if (form.principalMoratorium === 'No') return true;
+  return form.interestMoratorium === 'No'
+    && Number(calculateTotalInterestRate(form.interestRate, form.offsetRate)) > 0;
+}
+
+function getRepaymentTenureMonths(form) {
+  const tenure = Number(form.tenureMonths);
+  if (!Number.isInteger(tenure) || tenure <= 0) return tenure;
+  return isMoratoriumPeriodConfigured(form)
+    ? tenure
+    : tenure;
+}
+
+function calculateRepaymentStartDate(form) {
+  if (form.emiApplicable !== 'Yes' || !isValidDate(form.sanctionedDate)) return '';
+  let startDate = '';
+  if (isMoratoriumPeriodConfigured(form)) {
+    const moratoriumEndMonth = getMoratoriumToDate(form);
+    if (!isValidDate(moratoriumEndMonth)) return '';
+    startDate = normalizeMoratoriumMonthValue(addMonthsToDate(moratoriumEndMonth, 1));
+  } else {
+    startDate = addMonthsToDate(form.sanctionedDate, 1);
+  }
+  return applyEmiFixDateDay(startDate, form.emiFixDate);
+}
+
+function calculateRepaymentEndDate(form) {
+  if (form.emiApplicable !== 'Yes') return '';
+  return calculateInstalmentEndDate(
+    calculateRepaymentStartDate(form),
+    Number(form.tenureMonths),
+    form.emiType,
+  );
+}
+
+function getInstalmentPeriods(tenureMonths, frequency = 'Monthly') {
   const tenure = Number(tenureMonths);
-  if (!String(tenureMonths ?? '').trim() || !Number.isInteger(tenure) || tenure <= 0) return '';
-  return addMonthsToDate(startDate, tenure);
+  if (!String(tenureMonths ?? '').trim() || !Number.isInteger(tenure) || tenure <= 0) return [];
+  const interval = frequency === 'Quarterly' ? 3 : 1;
+  const periods = [];
+  for (let remaining = tenure; remaining > 0; remaining -= interval) {
+    periods.push(Math.min(interval, remaining));
+  }
+  return periods;
 }
 
 function formatDateText(value) {
@@ -207,7 +364,7 @@ function calculateTotalInterestRate(interestRate, offsetRate) {
   return String(Math.round(total * 100) / 100);
 }
 
-export function calculateInstalmentAmount(loanAmount, tenureMonths, totalInterestRate) {
+export function calculateInstalmentAmount(loanAmount, tenureMonths, totalInterestRate, frequency = 'Monthly') {
   const amountText = String(loanAmount ?? '').trim();
   const tenureText = String(tenureMonths ?? '').trim();
   const rateText = String(totalInterestRate ?? '').trim();
@@ -229,10 +386,16 @@ export function calculateInstalmentAmount(loanAmount, tenureMonths, totalInteres
     return '';
   }
 
+  const periods = getInstalmentPeriods(tenure, frequency);
   const monthlyRate = annualRate / 1200;
+  let accumulatedGrowth = 1;
+  const discountFactorTotal = periods.reduce((total, months) => {
+    accumulatedGrowth *= (1 + monthlyRate) ** months;
+    return total + 1 / accumulatedGrowth;
+  }, 0);
   const payment = monthlyRate === 0
-    ? amount / tenure
-    : amount * monthlyRate / (1 - ((1 + monthlyRate) ** -tenure));
+    ? amount / periods.length
+    : amount / discountFactorTotal;
 
   return Number.isFinite(payment) ? payment.toFixed(2) : '';
 }
@@ -259,7 +422,7 @@ function validateCode(value, label, { required = false, minLength = 3, maxLength
 function validatePolicyNumber(value) {
   const raw = String(value ?? '');
   const text = raw.trim();
-  if (!text) return 'Policy number is required.';
+  if (!text) return '';
   if (/\s/.test(raw)) return 'Spaces are not allowed in policy number.';
   if (!/^[A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*$/.test(text)) {
     return 'Enter a valid alphanumeric policy number.';
@@ -426,12 +589,26 @@ export function createInitialRetailLoanForm(application) {
     offsetRate: application?.offsetRate || '',
     totalInterestRate: application?.totalInterestRate || '',
     moratorium: application?.moratorium || '',
+    moratoriumMonths: application?.moratoriumMonths ?? application?.moratorium ?? savedForm.moratoriumMonths ?? savedForm.moratorium ?? '',
+    moratoriumApplicable: ['Yes', 'No'].includes(application?.moratoriumApplicable)
+      ? application.moratoriumApplicable
+      : ['Yes', 'No'].includes(savedForm.moratoriumApplicable)
+        ? savedForm.moratoriumApplicable
+        : Number(application?.moratoriumMonths ?? application?.moratorium ?? savedForm.moratoriumMonths ?? savedForm.moratorium) > 0
+          ? 'Yes'
+          : 'No',
+    moratoriumFrom: application?.moratoriumFrom || '',
+    moratoriumEndDate: '',
+    principalMoratorium: application?.principalMoratorium || '',
+    interestMoratorium: application?.interestMoratorium || '',
     expiryDate: application?.expiryDate || goldLoan.expiryDate || '',
     instalmentAmount: application?.instalmentAmount || goldLoan.instalmentAmount || '',
     instalmentStartDate: application?.instalmentStartDate || goldLoan.repaymentStartDate || '',
     sanctioningAuthority: application?.sanctioningAuthority || goldLoan.sanctionAuthority || '',
     tenureMonths: application?.tenureMonths || goldLoan.tenureMonths || '',
-    emiType: application?.emiType || '',
+    emiApplicable: application?.emiApplicable || 'Yes',
+    emiFixDate: application?.emiFixDate || savedForm.emiFixDate || 'Current Date',
+    emiType: application?.emiType || 'Monthly',
     bulletPayment: application?.bulletPayment || '',
     instalmentEndDate: application?.instalmentEndDate || application?.expiryDate || goldLoan.expiryDate || '',
     purposeCode: application?.purposeCode || goldLoan.basicDetails?.purposeLoan || '',
@@ -494,9 +671,9 @@ export function createInitialRetailLoanForm(application) {
     'offsetRate',
     'totalInterestRate',
     'moratorium',
+    'moratoriumMonths',
     'instalmentAmount',
     'tenureMonths',
-    'bulletPayment',
     'securityAmount',
     'marginPercent',
     'valuationAmount',
@@ -530,16 +707,55 @@ export function createInitialRetailLoanForm(application) {
   };
 
   if (!mergedForm.relatedParties.length) mergedForm.relatedParties = [blankRelatedParty()];
+  if (!['Monthly', 'Quarterly'].includes(mergedForm.emiType)) mergedForm.emiType = 'Monthly';
+  if (!['5', '10', 'Current Date'].includes(String(mergedForm.emiFixDate))) {
+    mergedForm.emiFixDate = 'Current Date';
+  }
+  mergedForm.moratoriumMonths = String(mergedForm.moratoriumMonths ?? mergedForm.moratorium ?? '');
+  if (!['Yes', 'No'].includes(mergedForm.moratoriumApplicable)) {
+    mergedForm.moratoriumApplicable = Number(mergedForm.moratoriumMonths) > 0 ? 'Yes' : 'No';
+  }
+  if (mergedForm.emiApplicable === 'No') {
+    mergedForm.moratoriumApplicable = 'No';
+  }
+  if (mergedForm.moratoriumApplicable === 'No') {
+    Object.assign(mergedForm, {
+      moratorium: '',
+      moratoriumMonths: '',
+      moratoriumFrom: '',
+      moratoriumEndDate: '',
+      principalMoratorium: '',
+      interestMoratorium: '',
+    });
+  }
+  mergedForm.bulletPayment = mergedForm.emiApplicable === 'Yes'
+    ? ''
+    : ['Yes', 'No'].includes(String(mergedForm.bulletPayment))
+      ? String(mergedForm.bulletPayment)
+      : Number(mergedForm.bulletPayment) > 0 ? 'Yes' : 'No';
   mergedForm.totalInterestRate = calculateTotalInterestRate(mergedForm.interestRate, mergedForm.offsetRate);
-  mergedForm.instalmentAmount = calculateInstalmentAmount(
-    mergedForm.loanAmount,
-    mergedForm.tenureMonths,
-    mergedForm.totalInterestRate,
-  );
-  mergedForm.instalmentEndDate = calculateInstalmentEndDate(
-    mergedForm.instalmentStartDate,
-    mergedForm.tenureMonths,
-  );
+  mergedForm.expiryDate = /^\d+$/.test(String(mergedForm.tenureMonths ?? ''))
+    && Number(mergedForm.tenureMonths) > 0
+    ? addMonthsToDate(mergedForm.sanctionedDate, Number(mergedForm.tenureMonths))
+    : '';
+  mergedForm.moratoriumFrom = getMoratoriumFromDate(mergedForm);
+  mergedForm.moratoriumEndDate = calculateMoratoriumToDate(mergedForm);
+  mergedForm.instalmentStartDate = calculateRepaymentStartDate(mergedForm);
+  mergedForm.instalmentEndDate = calculateRepaymentEndDate(mergedForm);
+  if (mergedForm.emiApplicable === 'Yes') {
+    mergedForm.expiryDate = mergedForm.instalmentEndDate || '';
+  }
+  if (mergedForm.emiApplicable === 'No') {
+    mergedForm.emiFixDate = '';
+    mergedForm.emiType = '';
+    mergedForm.instalmentAmount = '';
+  } else {
+    const firstScheduledPayment = getRepaymentRows(mergedForm)
+      .find((row) => row.instalment > 0);
+    mergedForm.instalmentAmount = firstScheduledPayment
+      ? firstScheduledPayment.instalment.toFixed(2)
+      : '';
+  }
   mergedForm.securityValue = getSynchronizedSecurityValue(mergedForm.securityAmount);
   return mergedForm;
 }
@@ -683,44 +899,169 @@ function RetailField({
 }
 
 export function getRepaymentRows(form) {
+  if (form.emiApplicable === 'No') return [];
   const amount = Number(form.loanAmount);
   const tenure = Number(form.tenureMonths);
-  const totalRate = String(form.totalInterestRate ?? '').trim()
-    ? form.totalInterestRate
-    : calculateTotalInterestRate(form.interestRate, form.offsetRate);
-  const annualRate = Number(totalRate);
-  if (!Number.isFinite(amount) || amount <= 0 || !Number.isInteger(tenure) || tenure <= 0) {
+  const totalRate = calculateTotalInterestRate(form.interestRate, form.offsetRate);
+  if (
+    !Number.isFinite(amount)
+    || amount <= 0
+    || !Number.isInteger(tenure)
+    || tenure <= 0
+    || !isValidPercentage(totalRate)
+  ) {
     return [];
   }
 
-  const monthlyRate = Number.isFinite(annualRate) && annualRate > 0
-    ? annualRate / 1200
-    : 0;
-  const instalment = Number(calculateInstalmentAmount(amount, tenure, totalRate));
-  if (!Number.isFinite(instalment) || instalment <= 0) return [];
-  const start = form.instalmentStartDate ? new Date(`${form.instalmentStartDate}T00:00:00`) : null;
   const roundToCents = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
-  let balance = roundToCents(amount);
+  const monthlyRate = Number(totalRate) / 12 / 100;
+  const calculateEmi = (principal, months) => {
+    if (!Number.isFinite(principal) || principal <= 0 || !Number.isInteger(months) || months <= 0) return 0;
+    const growth = (1 + monthlyRate) ** months;
+    const amount = monthlyRate === 0
+      ? principal / months
+      : (principal * monthlyRate * growth) / (growth - 1);
+    const rounded = roundToCents(amount);
+    if (roundToCents(rounded * months) < roundToCents(principal)) {
+      throw new Error('The calculated EMI cannot repay the principal within the selected tenure.');
+    }
+    return { amount, rounded };
+  };
+  const makeDateLabel = (dateValue, isMoratorium = false) => {
+    if (!dateValue) return '';
+    const date = new Date(`${dateValue}T00:00:00`);
+    const label = date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+    return isMoratorium ? `Moratorium - ${label}` : label;
+  };
+  const groupMonthlyRows = (monthlyRows, periodMonths, startDate, isMoratorium = false) => {
+    let monthOffset = 0;
+    return periodMonths.map((months, index) => {
+      const group = monthlyRows.slice(monthOffset, monthOffset + months);
+      if (!group.length) return null;
+      const openingBalance = group[0].openingBalance;
+      const lastRow = group[group.length - 1];
+      const dateOffset = isMoratorium ? monthOffset + months : monthOffset;
+      const dateValue = isValidDate(startDate) ? addMonthsToDate(startDate, dateOffset) : '';
+      monthOffset += months;
+      return {
+        month: dateValue ? makeDateLabel(dateValue, isMoratorium) : index + 1,
+        openingBalance,
+        instalment: roundToCents(group.reduce((sum, row) => sum + row.instalment, 0)),
+        interest: roundToCents(group.reduce((sum, row) => sum + row.interest, 0)),
+        principal: roundToCents(group.reduce((sum, row) => sum + row.principal, 0)),
+        capitalizedInterest: roundToCents(group.reduce((sum, row) => sum + row.capitalizedInterest, 0)),
+        balance: lastRow.balance,
+        moratorium: isMoratorium,
+      };
+    }).filter(Boolean);
+  };
+  const createAmortizationRows = (principal, months) => {
+    const emi = calculateEmi(principal, months);
+    if (!emi || emi.amount <= 0) return [];
+    let balance = principal;
+    return Array.from({ length: months }, (_, month) => {
+      const openingBalance = balance;
+      const interestAmount = openingBalance * monthlyRate;
+      const principalAmount = month === months - 1
+        ? balance
+        : Math.min(balance, Math.max(0, emi.amount - interestAmount));
+      balance = month === months - 1
+        ? 0
+        : Math.max(0, balance - principalAmount);
+      const interest = roundToCents(interestAmount);
+      const principal = month === months - 1
+        ? roundToCents(openingBalance)
+        : roundToCents(emi.rounded - interest);
+      return {
+        openingBalance: roundToCents(openingBalance),
+        instalment: month === months - 1
+          ? roundToCents(principal + interest)
+          : emi.rounded,
+        interest,
+        principal,
+        capitalizedInterest: 0,
+        balance: roundToCents(balance),
+      };
+    });
+  };
+  const periods = getInstalmentPeriods(tenure, form.emiType);
+  const delayedMoratorium = isInstallmentScheduleDelayedByMoratorium(form);
+  const moratoriumMonths = Number(form.moratoriumMonths);
 
-  return Array.from({ length: tenure }, (_, index) => {
-    const interest = roundToCents(balance * monthlyRate);
-    const principal = index === tenure - 1
-      ? balance
-      : Math.min(balance, Math.max(0, roundToCents(instalment - interest)));
-    const currentBalance = roundToCents(Math.max(0, balance - principal));
-    const dateValue = start ? addMonthsToDate(form.instalmentStartDate, index) : '';
-    const date = dateValue ? new Date(`${dateValue}T00:00:00`) : null;
-    balance = currentBalance;
-    return {
-      month: date
-        ? date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
-        : index + 1,
-      instalment: roundToCents(principal + interest),
-      interest,
-      principal,
-      balance: currentBalance,
-    };
-  });
+  if (delayedMoratorium) {
+    if (
+      !Number.isInteger(moratoriumMonths)
+      || moratoriumMonths <= 0
+      || moratoriumMonths > tenure
+      || !isValidDate(form.moratoriumFrom)
+      || !isValidDate(form.instalmentStartDate)
+    ) {
+      return [];
+    }
+
+    const moratoriumPeriods = getInstalmentPeriods(moratoriumMonths, form.emiType);
+    const repaymentPeriods = periods;
+    let balance = amount;
+    const moratoriumInterestAmount = amount * monthlyRate * moratoriumMonths;
+    const moratoriumInterestTotal = roundToCents(moratoriumInterestAmount);
+    const principalIsDeferred = form.principalMoratorium === 'Yes';
+    const regularEmi = principalIsDeferred ? null : calculateEmi(amount, tenure);
+    let regularBalance = amount;
+    const moratoriumMonthlyRows = [];
+
+    for (let month = 0; month < moratoriumMonths; month += 1) {
+      const openingBalance = roundToCents(balance);
+      const principalAmount = principalIsDeferred
+        ? 0
+        : month === tenure - 1
+          ? regularBalance
+          : Math.min(
+            regularBalance,
+            Math.max(0, regularEmi.amount - regularBalance * monthlyRate),
+          );
+      const principal = roundToCents(principalAmount);
+      const capitalizedInterest = month === moratoriumMonths - 1
+        ? moratoriumInterestTotal
+        : 0;
+      regularBalance = Math.max(0, regularBalance - principalAmount);
+      balance = Math.max(0, balance - principalAmount + (
+        month === moratoriumMonths - 1 ? moratoriumInterestAmount : 0
+      ));
+      moratoriumMonthlyRows.push({
+        openingBalance,
+        instalment: roundToCents(principal),
+        interest: 0,
+        principal,
+        capitalizedInterest,
+        balance: roundToCents(balance),
+      });
+    }
+    const moratoriumRows = groupMonthlyRows(
+      moratoriumMonthlyRows,
+      moratoriumPeriods,
+      form.moratoriumFrom,
+      true,
+    );
+
+    const postMoratoriumMonthlyRows = createAmortizationRows(balance, tenure);
+    if (!postMoratoriumMonthlyRows.length) return moratoriumRows;
+    return [
+      ...moratoriumRows,
+      ...groupMonthlyRows(
+        postMoratoriumMonthlyRows,
+        repaymentPeriods,
+        form.instalmentStartDate,
+      ),
+    ];
+  }
+
+  const monthlyRows = createAmortizationRows(amount, tenure);
+  if (!monthlyRows.length) return [];
+  return groupMonthlyRows(
+    monthlyRows,
+    periods,
+    form.instalmentStartDate,
+  );
 }
 
 function formatRupees(value) {
@@ -751,6 +1092,10 @@ export default function RetailLoanApplicationForm({
   const [repaymentPage, setRepaymentPage] = useState(0);
   const submissionLock = useRef(false);
   const repaymentRows = useMemo(() => getRepaymentRows(form), [form]);
+  const visibleStepIndices = RETAIL_STEPS
+    .map((_, index) => index)
+    .filter((index) => index !== 3 || form.emiApplicable === 'Yes');
+  const currentStepPosition = visibleStepIndices.indexOf(currentStep);
   const repaymentPageCount = Math.ceil(repaymentRows.length / REPAYMENT_PAGE_SIZE);
   const repaymentPageIndex = Math.min(repaymentPage, Math.max(0, repaymentPageCount - 1));
   const repaymentPageStart = repaymentPageIndex * REPAYMENT_PAGE_SIZE;
@@ -762,6 +1107,10 @@ export default function RetailLoanApplicationForm({
   const canAddRelatedParty = Boolean(
     currentRelatedParty && Object.keys(validateRelatedParty(currentRelatedParty, currentPartyIndex)).length === 0,
   );
+  const totalScheduledInterest = repaymentRows.reduce(
+    (total, row) => total + row.interest + (row.capitalizedInterest || 0),
+    0,
+  );
 
   useEffect(() => {
     setRepaymentPage(0);
@@ -770,9 +1119,15 @@ export default function RetailLoanApplicationForm({
     form.tenureMonths,
     form.interestRate,
     form.offsetRate,
+    form.emiType,
+    form.emiApplicable,
     form.instalmentAmount,
     form.instalmentStartDate,
   ]);
+
+  useEffect(() => {
+    if (form.emiApplicable === 'No' && currentStep === 3) setCurrentStep(2);
+  }, [currentStep, form.emiApplicable]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -881,6 +1236,58 @@ export default function RetailLoanApplicationForm({
   const updateField = (name, value) => {
     const nextForm = { ...form, [name]: value };
     const changedFields = new Set([name]);
+    if (name === 'moratoriumApplicable' && value === 'No') {
+      Object.assign(nextForm, {
+        moratorium: '',
+        moratoriumMonths: '',
+        moratoriumFrom: '',
+        moratoriumEndDate: '',
+        principalMoratorium: '',
+        interestMoratorium: '',
+      });
+      ['moratorium', 'moratoriumMonths', 'moratoriumFrom', 'moratoriumEndDate', 'principalMoratorium', 'interestMoratorium']
+        .forEach((field) => changedFields.add(field));
+    }
+    if (name === 'emiApplicable') {
+      if (value === 'No') {
+        Object.assign(nextForm, {
+          emiFixDate: '',
+          emiType: '',
+          instalmentAmount: '',
+          instalmentStartDate: '',
+          instalmentEndDate: '',
+          moratorium: '',
+          moratoriumApplicable: 'No',
+          moratoriumMonths: '',
+          moratoriumFrom: '',
+          moratoriumEndDate: '',
+          principalMoratorium: '',
+          interestMoratorium: '',
+        });
+        [
+          'emiFixDate',
+          'emiType',
+          'instalmentAmount',
+          'instalmentStartDate',
+          'instalmentEndDate',
+          'moratorium',
+          'moratoriumApplicable',
+          'moratoriumMonths',
+          'moratoriumFrom',
+          'moratoriumEndDate',
+          'principalMoratorium',
+          'interestMoratorium',
+        ]
+          .forEach((field) => changedFields.add(field));
+      } else {
+        Object.assign(nextForm, {
+          emiFixDate: form.emiFixDate || 'Current Date',
+          emiType: form.emiType || 'Monthly',
+          bulletPayment: '',
+        });
+        changedFields.add('bulletPayment');
+      }
+    }
     if (name === 'interestRate' || name === 'offsetRate') {
       nextForm.totalInterestRate = calculateTotalInterestRate(
         name === 'interestRate' ? value : form.interestRate,
@@ -888,20 +1295,89 @@ export default function RetailLoanApplicationForm({
       );
       changedFields.add('totalInterestRate');
     }
-    if (['loanAmount', 'tenureMonths', 'interestRate', 'offsetRate'].includes(name)) {
-      nextForm.instalmentAmount = calculateInstalmentAmount(
-        nextForm.loanAmount,
-        nextForm.tenureMonths,
-        nextForm.totalInterestRate,
-      );
+    if (['loanAmount', 'tenureMonths', 'interestRate', 'offsetRate', 'emiType', 'emiApplicable'].includes(name)) {
+      nextForm.instalmentAmount = nextForm.emiApplicable === 'Yes'
+        ? calculateInstalmentAmount(
+          nextForm.loanAmount,
+          nextForm.tenureMonths,
+          nextForm.totalInterestRate,
+          nextForm.emiType,
+        )
+        : '';
       changedFields.add('instalmentAmount');
     }
-    if (name === 'tenureMonths' || name === 'instalmentStartDate') {
-      nextForm.instalmentEndDate = calculateInstalmentEndDate(
-        nextForm.instalmentStartDate,
-        nextForm.tenureMonths,
-      );
-      changedFields.add('instalmentEndDate');
+    if (['sanctionedDate', 'tenureMonths', 'emiFixDate', 'emiType', 'emiApplicable'].includes(name)) {
+      nextForm.expiryDate = /^\d+$/.test(String(nextForm.tenureMonths ?? ''))
+        && Number(nextForm.tenureMonths) > 0
+        ? addMonthsToDate(nextForm.sanctionedDate, Number(nextForm.tenureMonths))
+        : '';
+      ['expiryDate'].forEach((field) => changedFields.add(field));
+    }
+    if ([
+      'sanctionedDate',
+      'loanAmount',
+      'tenureMonths',
+      'interestRate',
+      'offsetRate',
+      'emiApplicable',
+      'emiFixDate',
+      'emiType',
+      'moratoriumApplicable',
+      'moratoriumMonths',
+      'moratoriumFrom',
+      'moratoriumEndDate',
+      'principalMoratorium',
+      'interestMoratorium',
+    ].includes(name)) {
+      const shouldAutoCalculateMoratoriumDates = [
+        'sanctionedDate',
+        'tenureMonths',
+        'emiApplicable',
+        'emiFixDate',
+        'emiType',
+        'moratoriumApplicable',
+        'moratoriumMonths',
+        'loanAmount',
+        'interestRate',
+        'offsetRate',
+      ].includes(name);
+      if (shouldAutoCalculateMoratoriumDates) {
+        if (!isMoratoriumPeriodConfigured(nextForm)) {
+          nextForm.moratoriumFrom = '';
+          nextForm.moratoriumEndDate = '';
+        } else if (['emiApplicable', 'moratoriumApplicable'].includes(name)) {
+          nextForm.moratoriumFrom = normalizeMoratoriumMonthValue(nextForm.moratoriumFrom) || getMoratoriumFromDate(nextForm) || normalizeMoratoriumMonthValue(addMonthsToDate(getTodayDate(), 1));
+          nextForm.moratoriumEndDate = calculateMoratoriumToDate(nextForm);
+        } else {
+          nextForm.moratoriumFrom = normalizeMoratoriumMonthValue(nextForm.moratoriumFrom) || getMoratoriumFromDate(nextForm);
+          nextForm.moratoriumEndDate = calculateMoratoriumToDate(nextForm);
+        }
+      } else {
+        nextForm.moratoriumFrom = normalizeMoratoriumMonthValue(nextForm.moratoriumFrom);
+        nextForm.moratoriumEndDate = normalizeMoratoriumMonthValue(nextForm.moratoriumEndDate);
+        if (name === 'moratoriumFrom' && isMoratoriumPeriodConfigured(nextForm)) {
+          nextForm.moratoriumEndDate = calculateMoratoriumToDate(nextForm);
+        } else if (name === 'moratoriumEndDate' && isMoratoriumPeriodConfigured(nextForm)) {
+          nextForm.moratoriumEndDate = calculateMoratoriumToDate(nextForm);
+        } else if (['principalMoratorium', 'interestMoratorium'].includes(name) && isMoratoriumPeriodConfigured(nextForm)) {
+          nextForm.moratoriumFrom = normalizeMoratoriumMonthValue(nextForm.moratoriumFrom) || getMoratoriumFromDate(nextForm);
+          nextForm.moratoriumEndDate = calculateMoratoriumToDate(nextForm);
+        }
+      }
+      nextForm.instalmentStartDate = calculateRepaymentStartDate(nextForm);
+      nextForm.instalmentEndDate = calculateRepaymentEndDate(nextForm);
+      if (nextForm.emiApplicable === 'Yes') {
+        nextForm.expiryDate = nextForm.instalmentEndDate || '';
+        const firstScheduledPayment = getRepaymentRows(nextForm)
+          .find((row) => row.instalment > 0);
+        nextForm.instalmentAmount = firstScheduledPayment
+          ? firstScheduledPayment.instalment.toFixed(2)
+          : '';
+      } else {
+        nextForm.instalmentAmount = '';
+      }
+      ['moratoriumFrom', 'moratoriumEndDate', 'instalmentStartDate', 'instalmentEndDate', 'instalmentAmount', 'expiryDate']
+        .forEach((field) => changedFields.add(field));
     }
     if (name === 'securityAmount') {
       nextForm.securityValue = getSynchronizedSecurityValue(value);
@@ -1052,7 +1528,7 @@ export default function RetailLoanApplicationForm({
       });
     }
 
-    if (step === 2 || step === 3) {
+    if (step === 2) {
       putError('sanctionedDate', validateDate(values.sanctionedDate, 'Sanction date', true));
       putError('sanctioningAuthority', validateText(values.sanctioningAuthority, 'Sanction authority', {
         required: true,
@@ -1066,32 +1542,81 @@ export default function RetailLoanApplicationForm({
       putError('totalInterestRate', values.totalInterestRate
         ? validateRate(values.totalInterestRate, 'Total interest rate', true)
         : '');
-      validateWholeNumber('moratorium', 'Moratorium', { min: 0 });
-      putError('expiryDate', validateDate(values.expiryDate, 'Expiry date', true));
-      putError('instalmentAmount', validateAmount(values.instalmentAmount, 'Instalment amount', true));
-      putError('instalmentStartDate', validateDate(values.instalmentStartDate, 'Instalment start date', true));
-      if (!['Monthly', 'Quarterly', 'User Defined'].includes(values.emiType)) {
-        next.emiType = 'Select a valid EMI frequency.';
+      if (values.emiApplicable === 'Yes' && !['Yes', 'No'].includes(values.moratoriumApplicable)) {
+        next.moratoriumApplicable = 'Select Yes or No for Moratorium.';
       }
-      putError('bulletPayment', validateAmount(values.bulletPayment, 'Bullet payment'));
-      putError('instalmentEndDate', validateDate(values.instalmentEndDate, 'Instalment end date', true));
+      if (values.emiApplicable === 'Yes' && values.moratoriumApplicable === 'Yes') {
+        validateWholeNumber('moratoriumMonths', 'Moratorium months', { required: true, min: 1 });
+        putError('moratoriumFrom', values.moratoriumFrom
+          ? validateDate(values.moratoriumFrom, 'Moratorium from month', true)
+          : '');
+        if (!['Yes', 'No'].includes(values.principalMoratorium)) {
+          next.principalMoratorium = 'Select Yes or No for Principal Moratorium.';
+        }
+        if (!['Yes', 'No'].includes(values.interestMoratorium)) {
+          next.interestMoratorium = 'Select Yes or No for Interest Moratorium.';
+        }
+        const moratoriumMonthsText = String(values.moratoriumMonths ?? '').trim();
+        const moratoriumMonths = Number(moratoriumMonthsText);
+        const moratoriumPeriodConfigured = /^\d+$/.test(moratoriumMonthsText) && moratoriumMonths > 0;
+        if (moratoriumPeriodConfigured) {
+          const tenure = Number(values.tenureMonths);
+          if (Number.isInteger(tenure) && moratoriumMonths > tenure) {
+            next.moratoriumMonths = 'Moratorium months cannot exceed the approved loan tenure.';
+          }
+          if (isValidDate(values.moratoriumFrom) && isValidDate(values.sanctionedDate)
+            && values.moratoriumFrom <= values.sanctionedDate) {
+            next.moratoriumFrom = 'Moratorium from month must be after the sanction date.';
+          }
+          const moratoriumEndDate = getMoratoriumEndDate(values.sanctionedDate, moratoriumMonths);
+          if (!isInstallmentScheduleDelayedByMoratorium(values)
+            && isValidDate(moratoriumEndDate) && isValidDate(values.expiryDate)
+            && moratoriumEndDate > values.expiryDate) {
+            next.moratoriumMonths = 'Moratorium end date cannot be after the loan expiry date.';
+          }
+        }
+      }
+      if (!['Yes', 'No'].includes(values.emiApplicable)) {
+        next.emiApplicable = 'Select Yes or No for EMI.';
+      }
+      if (values.emiApplicable === 'No') {
+        putError('expiryDate', validateDate(values.expiryDate, 'Expiry date', true));
+        if (!['Yes', 'No'].includes(values.bulletPayment)) {
+          next.bulletPayment = 'Select Yes or No for Bullet Payment.';
+        }
+      } else if (values.emiApplicable === 'Yes') {
+        if (!['5', '10', 'Current Date'].includes(String(values.emiFixDate))) {
+          next.emiFixDate = 'Select a valid EMI fix date.';
+        }
+        if (!['Monthly', 'Quarterly'].includes(values.emiType)) {
+          next.emiType = 'Select a valid EMI frequency.';
+        }
+        putError('instalmentAmount', validateAmount(values.instalmentAmount, 'Instalment amount', true));
+        putError('instalmentStartDate', validateDate(values.instalmentStartDate, 'Instalment start date', true));
+        putError('instalmentEndDate', validateDate(values.instalmentEndDate, 'Instalment end date', true));
+      }
       if (isValidDate(values.effectiveDate) && isValidDate(values.sanctionedDate)
         && values.sanctionedDate < values.effectiveDate) {
         next.sanctionedDate = 'Sanction date cannot precede the effective date.';
       }
-      if (isValidDate(values.sanctionedDate) && isValidDate(values.expiryDate)
+      if (values.emiApplicable === 'No'
+        && isValidDate(values.sanctionedDate) && isValidDate(values.expiryDate)
         && values.expiryDate <= values.sanctionedDate) {
         next.expiryDate = 'Expiry date must be after the sanction date.';
       }
-      if (isValidDate(values.sanctionedDate) && isValidDate(values.instalmentStartDate)
+      if (values.emiApplicable === 'Yes'
+        && isValidDate(values.sanctionedDate) && isValidDate(values.instalmentStartDate)
         && values.instalmentStartDate < values.sanctionedDate) {
         next.instalmentStartDate = 'Instalment start date cannot precede the sanction date.';
       }
-      if (isValidDate(values.expiryDate) && isValidDate(values.instalmentStartDate)
+      if (values.emiApplicable === 'Yes'
+        && isValidDate(values.expiryDate) && isValidDate(values.instalmentStartDate)
+        && !isInstallmentScheduleDelayedByMoratorium(values)
         && values.instalmentStartDate > values.expiryDate) {
         next.instalmentStartDate = 'Instalment start date cannot be after the expiry date.';
       }
-      if (isValidDate(values.instalmentStartDate) && isValidDate(values.instalmentEndDate)
+      if (values.emiApplicable === 'Yes'
+        && isValidDate(values.instalmentStartDate) && isValidDate(values.instalmentEndDate)
         && values.instalmentEndDate < values.instalmentStartDate) {
         next.instalmentEndDate = 'Instalment end date cannot precede the start date.';
       }
@@ -1148,13 +1673,13 @@ export default function RetailLoanApplicationForm({
     }
 
     if (step === 6) {
-      putError('securityValue', validateAmount(values.securityValue, 'Security value', true));
-      putError('premiumAmount', validateAmount(values.premiumAmount, 'Premium amount', true));
-      putError('insuranceCompany', validateText(values.insuranceCompany, 'Insurance company', { required: true }));
-      putError('sumAssured', validateAmount(values.sumAssured, 'Sum assured', true));
+      putError('securityValue', validateAmount(values.securityValue, 'Security value'));
+      putError('premiumAmount', validateAmount(values.premiumAmount, 'Premium amount'));
+      putError('insuranceCompany', validateText(values.insuranceCompany, 'Insurance company'));
+      putError('sumAssured', validateAmount(values.sumAssured, 'Sum assured'));
       putError('policyNumber', validatePolicyNumber(values.policyNumber));
-      putError('insuranceExpiryDate', validateDate(values.insuranceExpiryDate, 'Insurance expiry date', true));
-      putError('insuranceIssueDate', validateDate(values.insuranceIssueDate, 'Insurance issue date', true));
+      putError('insuranceExpiryDate', validateDate(values.insuranceExpiryDate, 'Insurance expiry date'));
+      putError('insuranceIssueDate', validateDate(values.insuranceIssueDate, 'Insurance issue date'));
       if (isValidDate(values.insuranceIssueDate) && isValidDate(values.insuranceExpiryDate)
         && values.insuranceExpiryDate <= values.insuranceIssueDate) {
         next.insuranceExpiryDate = 'Insurance expiry date must be after the issue date.';
@@ -1291,7 +1816,7 @@ export default function RetailLoanApplicationForm({
     const fieldsByStep = [
       ['loanAccountNumber', 'effectiveDate', 'customerId', 'branch', 'title', 'firstName', 'middleName', 'lastName', 'productCode', 'productName', 'schemeCode', 'schemeDescription', 'accountStatus', 'modeOfOperation', 'lastTransactionDate'],
       ['relatedParties'],
-      ['sanctionedDate', 'loanAmount', 'interestRate', 'offsetRate', 'totalInterestRate', 'moratorium', 'expiryDate', 'instalmentAmount', 'instalmentStartDate', 'sanctioningAuthority', 'tenureMonths', 'emiType', 'bulletPayment', 'instalmentEndDate'],
+      ['sanctionedDate', 'loanAmount', 'interestRate', 'offsetRate', 'totalInterestRate', 'moratorium', 'moratoriumApplicable', 'moratoriumMonths', 'moratoriumFrom', 'moratoriumEndDate', 'principalMoratorium', 'interestMoratorium', 'expiryDate', 'instalmentAmount', 'instalmentStartDate', 'sanctioningAuthority', 'tenureMonths', 'emiApplicable', 'emiFixDate', 'emiType', 'bulletPayment', 'instalmentEndDate'],
       [],
       ['purposeCode', 'prioritySector', 'prioritySectorCode', 'industryType', 'industrySubType', 'physicallyChallenged', 'termCode'],
       ['securityId', 'securityType', 'securityEffectiveDate', 'assetType', 'securityAmount', 'marginPercent', 'assetAddress', 'assetAddressLine2', 'city', 'state', 'pincode', 'valuationAmount', 'valuerName', 'valuationDate', 'inspectionBy', 'inspectionDate', 'inspectionReportName'],
@@ -1314,6 +1839,7 @@ export default function RetailLoanApplicationForm({
           ? [blankRelatedParty()]
           : '';
       });
+      if (currentStep === 2) cleared.moratoriumApplicable = 'No';
       if (currentStep === 5) cleared.securityValue = '';
       return cleared;
     });
@@ -1364,7 +1890,8 @@ export default function RetailLoanApplicationForm({
           <div className="retail-form-container">
             {/* Step Navigation Bar */}
             <nav className="retail-stepper" aria-label="Retail loan application steps">
-              {RETAIL_STEPS.map((step, index) => {
+              {visibleStepIndices.map((index) => {
+                const step = RETAIL_STEPS[index];
                 const isCurrent = index === currentStep;
                 const isComplete = index < currentStep;
                 const StepIcon = RETAIL_STEP_ICONS[index];
@@ -1582,24 +2109,108 @@ export default function RetailLoanApplicationForm({
                   <div className="retail-grid four-column">
                     {input('Interest Rate %', 'interestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, placeholder: 'e.g. 10.50' })}
                     {input('Offset Rate %', 'offsetRate', { type: 'number', min: '0', max: '100', step: '0.01', placeholder: 'e.g. 0.00' })}
-                    {input('Total Interest Rate %', 'totalInterestRate', { className: 'column-four', type: 'number', min: '0', max: '100', step: '0.01', required: true, readOnly: true })}
+                    {input('Total Interest Rate %', 'totalInterestRate', { type: 'number', min: '0', max: '100', step: '0.01', required: true, readOnly: true })}
+                    {input('EMI', 'emiApplicable', { options: ['Yes', 'No'], required: true })}
                   </div>
                   <div className="retail-grid four-column">
-                    {input('Moratorium (months)', 'moratorium', { type: 'number', min: '0', max: '600', step: '1', placeholder: '0' })}
-                    {input('Expiry Date', 'expiryDate', { type: 'date', min: dateAfter(form.sanctionedDate), required: true })}
-                    {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly', 'User Defined'], required: true })}
-                    {input('Bullet Payment (₹)', 'bulletPayment', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
+                    {form.emiApplicable === 'No' ? (
+                      <>
+                        {input('Bullet Payment', 'bulletPayment', { options: ['Yes', 'No'], required: true })}
+                        {input('Expiry Date', 'expiryDate', {
+                          className: 'retail-readonly-date',
+                          type: 'text',
+                          value: formatDateText(form.expiryDate),
+                          required: true,
+                          readOnly: true,
+                        })}
+                      </>
+                    ) : form.emiApplicable === 'Yes' && form.moratoriumApplicable !== 'Yes' ? (
+                      <>
+                        {input('EMI Fix Date', 'emiFixDate', { options: ['5', '10', 'Current Date'], required: true })}
+                        {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly'], required: true })}
+                        {input('Moratorium', 'moratoriumApplicable', { options: ['Yes', 'No'], required: true })}
+                        {input('Installment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true, placeholder: 'Calculated automatically' })}
+                      </>
+                    ) : form.emiApplicable === 'Yes' && form.moratoriumApplicable === 'Yes' ? (
+                      <>
+                        {input('EMI Fix Date', 'emiFixDate', { options: ['5', '10', 'Current Date'], required: true })}
+                        {input('EMI Frequency', 'emiType', { options: ['Monthly', 'Quarterly'], required: true })}
+                        {input('Moratorium', 'moratoriumApplicable', { options: ['Yes', 'No'], required: true })}
+                        {input('Moratorium Months', 'moratoriumMonths', {
+                          type: 'number',
+                          min: '1',
+                          max: form.tenureMonths || '600',
+                          step: '1',
+                          required: true,
+                          placeholder: 'e.g. 3',
+                        })}
+                      </>
+                    ) : null}
                   </div>
-                  <div className="retail-grid four-column">
-                    {input('Instalment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true, placeholder: 'Calculated automatically' })}
-                    {input('Instalment Start Date', 'instalmentStartDate', { type: 'date', min: form.sanctionedDate, max: form.expiryDate, required: true })}
-                    {input('Instalment End Date', 'instalmentEndDate', { className: 'column-four retail-installment-end-date', type: 'text', value: formatDateText(form.instalmentEndDate), readOnly: true, required: true })}
-                  </div>
+                  {form.emiApplicable === 'Yes' && form.moratoriumApplicable === 'Yes' && (
+                    <div className="retail-grid four-column">
+                      {input('Moratorium From', 'moratoriumFrom', {
+                        options: ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map((month) => ({
+                          value: month,
+                          label: new Date(`2000-${month}-01T00:00:00`).toLocaleDateString('en-IN', { month: 'long' }),
+                        })),
+                        value: getMoratoriumMonthInputValue(form.moratoriumFrom).slice(5, 7),
+                        onChange: (value) => {
+                          const currentMonth = getMoratoriumMonthInputValue(form.moratoriumFrom);
+                          const fallbackMonth = getFutureMonthMinValue();
+                          const year = (currentMonth || fallbackMonth).slice(0, 4);
+                          updateField('moratoriumFrom', value ? `${year}-${value}` : '');
+                        },
+                        required: true,
+                      })}
+                      {input('Moratorium To', 'moratoriumEndDate', {
+                        className: 'retail-readonly-date',
+                        type: 'text',
+                        value: formatMoratoriumMonthText(form.moratoriumEndDate),
+                        readOnly: true,
+                      })}
+                      {input('Principal Moratorium', 'principalMoratorium', {
+                        options: ['Yes', 'No'],
+                        required: true,
+                      })}
+                      {input('Interest Moratorium', 'interestMoratorium', {
+                        options: ['Yes', 'No'],
+                        required: true,
+                      })}
+                    </div>
+                  )}
+                  {form.emiApplicable === 'Yes' && form.moratoriumApplicable !== 'Yes' && (
+                    <div className="retail-grid four-column">
+                      {input('Installment Start Date', 'instalmentStartDate', { className: 'retail-readonly-date', type: 'text', value: formatDateText(form.instalmentStartDate), required: true, readOnly: true })}
+                      {input('Installment End Date', 'instalmentEndDate', { className: 'retail-readonly-date', type: 'text', value: formatDateText(form.instalmentEndDate), readOnly: true, required: true })}
+                      {input('Expiry Date', 'expiryDate', {
+                        className: 'retail-readonly-date',
+                        type: 'text',
+                        value: formatDateText(form.expiryDate),
+                        required: true,
+                        readOnly: true,
+                      })}
+                    </div>
+                  )}
+                  {form.emiApplicable === 'Yes' && form.moratoriumApplicable === 'Yes' && (
+                    <div className="retail-grid four-column">
+                      {input('Installment Amount (₹)', 'instalmentAmount', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true, placeholder: 'Calculated automatically' })}
+                      {input('Installment Start Date', 'instalmentStartDate', { className: 'retail-readonly-date', type: 'text', value: formatDateText(form.instalmentStartDate), required: true, readOnly: true })}
+                      {input('Installment End Date', 'instalmentEndDate', { className: 'retail-readonly-date', type: 'text', value: formatDateText(form.instalmentEndDate), readOnly: true, required: true })}
+                      {input('Expiry Date', 'expiryDate', {
+                        className: 'retail-readonly-date',
+                        type: 'text',
+                        value: formatDateText(form.expiryDate),
+                        required: true,
+                        readOnly: true,
+                      })}
+                    </div>
+                  )}
                 </section>
               )}
 
               {/* Step 3: Repayment Chart */}
-              {currentStep === 3 && (
+              {currentStep === 3 && form.emiApplicable === 'Yes' && (
                 <section className="retail-section-card">
                   <div className="retail-section-header">
                     <h3 className="retail-section-title">Repayment Chart</h3>
@@ -1608,12 +2219,13 @@ export default function RetailLoanApplicationForm({
                     <table className="retail-data-table chart-table">
                       <thead>
                         <tr>
+                          <th>Sr. No.</th>
                           <th>Month</th>
-                          <th>Principal Amount (₹)</th>
-                          <th>Instalment Amt (₹)</th>
-                          <th>Interest (₹)</th>
-                          <th>Principal (₹)</th>
-                          <th>Balance Amount (₹)</th>
+                          <th>Principal Amount (Rs.)</th>
+                          <th>Installment Amount (Rs.)</th>
+                          <th>Interest (Rs.)</th>
+                          <th>Principal (Rs.)</th>
+                          <th>Balance Amount (Rs.)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1621,8 +2233,9 @@ export default function RetailLoanApplicationForm({
                           const rowIndex = repaymentPageStart + index;
                           return (
                             <tr key={rowIndex}>
-                              <td className="row-number">{row.month}</td>
-                              <td>{formatRupees(rowIndex === 0 ? Number(form.loanAmount) : repaymentRows[rowIndex - 1].balance)}</td>
+                              <td className="row-number">{rowIndex + 1}</td>
+                              <td>{row.month}</td>
+                              <td>{formatRupees(row.openingBalance)}</td>
                               <td>{formatRupees(row.instalment)}</td>
                               <td>{formatRupees(row.interest)}</td>
                               <td>{formatRupees(row.principal)}</td>
@@ -1631,7 +2244,7 @@ export default function RetailLoanApplicationForm({
                           );
                         }) : (
                           <tr>
-                            <td colSpan="6" className="table-empty-cell">
+                            <td colSpan="7" className="table-empty-cell">
                               Enter a valid loan amount and tenure above to generate the repayment schedule.
                             </td>
                           </tr>
@@ -1639,6 +2252,11 @@ export default function RetailLoanApplicationForm({
                       </tbody>
                     </table>
                   </div>
+                  {repaymentRows.length > 0 && (
+                    <p className="retail-section-subtitle">
+                      Total interest (including capitalized moratorium interest): {formatRupees(totalScheduledInterest)}
+                    </p>
+                  )}
                   {repaymentPageCount > 1 && (
                     <nav className="retail-repayment-pagination" aria-label="Repayment schedule pages">
                       <button
@@ -1767,20 +2385,19 @@ export default function RetailLoanApplicationForm({
                     {input('Auto Renew', 'autoRenew', { options: RETAIL_LOAN_LOOKUP_OPTIONS.autoRenew })}
                   </div>
                   <div className="retail-grid four-column">
-                    {input('Security Value (₹)', 'securityValue', { type: 'number', min: '0', step: '0.01', required: true, readOnly: true })}
-                    {input('Premium Amount (₹)', 'premiumAmount', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
-                    {input('Policy Number', 'policyNumber', { required: true, maxLength: 30, placeholder: 'Policy number' })}
-                    {input('Sum Assured (₹)', 'sumAssured', { type: 'number', min: '0', step: '0.01', required: true, placeholder: '0.00' })}
+                    {input('Security Value (₹)', 'securityValue', { type: 'number', min: '0', step: '0.01', readOnly: true })}
+                    {input('Premium Amount (₹)', 'premiumAmount', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
+                    {input('Policy Number', 'policyNumber', { maxLength: 30, placeholder: 'Policy number' })}
+                    {input('Sum Assured (₹)', 'sumAssured', { type: 'number', min: '0', step: '0.01', placeholder: '0.00' })}
                   </div>
                   <div className="retail-grid four-column">
                     {input('Insurance Company', 'insuranceCompany', {
                       className: 'span-two',
-                      required: true,
                       maxLength: 50,
                       placeholder: 'Insurer name',
                     })}
-                    {input('Insurance Issue Date', 'insuranceIssueDate', { type: 'date', required: true })}
-                    {input('Insurance Expiry Date', 'insuranceExpiryDate', { type: 'date', min: dateAfter(form.insuranceIssueDate), required: true })}
+                    {input('Insurance Issue Date', 'insuranceIssueDate', { type: 'date' })}
+                    {input('Insurance Expiry Date', 'insuranceExpiryDate', { type: 'date' })}
                   </div>
                 </section>
               )}
@@ -1860,11 +2477,11 @@ export default function RetailLoanApplicationForm({
                   <button type="button" className="retail-btn-secondary" onClick={cancel}>
                     Cancel
                   </button>
-                  {currentStep > 0 && (
+                  {currentStepPosition > 0 && (
                     <button
                       type="button"
                       className="retail-btn-secondary"
-                      onClick={() => setCurrentStep((step) => step - 1)}
+                      onClick={() => setCurrentStep(visibleStepIndices[currentStepPosition - 1])}
                     >
                       <ChevronLeft size={16} aria-hidden="true" /> Previous
                     </button>
@@ -1877,11 +2494,11 @@ export default function RetailLoanApplicationForm({
                       Clear
                     </button>
                   )}
-                  {currentStep < RETAIL_STEPS.length - 1 ? (
+                  {currentStepPosition < visibleStepIndices.length - 1 ? (
                     <button
                       type="button"
                       className="retail-btn-primary"
-                      onClick={() => navigateToStep(currentStep + 1)}
+                      onClick={() => navigateToStep(visibleStepIndices[currentStepPosition + 1])}
                     >
                       Next <ChevronRight size={16} aria-hidden="true" />
                     </button>
@@ -2263,7 +2880,7 @@ export default function RetailLoanApplicationForm({
           font-size: 12px;
         }
 
-        :global(.retail-installment-end-date .retail-input-control:read-only) {
+        :global(.retail-readonly-date .retail-input-control:read-only) {
           background: #fff;
           color: #1b3541;
           cursor: default;

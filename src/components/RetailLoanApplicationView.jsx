@@ -86,6 +86,10 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
   const amount = application?.amount ?? form.loanAmount;
   const status = application?.status || form.accountStatus;
   const repaymentRows = useMemo(() => getRepaymentRows(form), [form]);
+  const totalScheduledInterest = repaymentRows.reduce(
+    (total, row) => total + row.interest + (row.capitalizedInterest || 0),
+    0,
+  );
 
   const populatedParties = form.relatedParties.filter((party) =>
     Object.entries(party).some(([key, value]) => key !== 'id' && String(value || '').trim()),
@@ -338,13 +342,23 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
                     ['interestRate', 'Interest Rate (%)'],
                     ['offsetRate', 'Offset Rate (%)'],
                     ['totalInterestRate', 'Total Interest Rate (%)'],
-                    ['moratorium', 'Moratorium (months)'],
-                    ['expiryDate', 'Expiry Date'],
+                    ...(form.emiApplicable === 'Yes' ? [
+                      ['emiApplicable', 'EMI'],
+                      ['moratoriumApplicable', 'Moratorium'],
+                    ] : []),
+                    ...(form.emiApplicable === 'Yes' && form.moratoriumApplicable === 'Yes' ? [
+                      ['moratoriumMonths', 'Moratorium Months'],
+                      ['moratoriumFrom', 'Moratorium From'],
+                      ['moratoriumEndDate', 'Moratorium To'],
+                      ['principalMoratorium', 'Principal Moratorium'],
+                      ['interestMoratorium', 'Interest Moratorium'],
+                    ] : []),
                     ['instalmentAmount', 'Instalment Amount'],
                     ['instalmentStartDate', 'Instalment Start Date'],
                     ['emiType', 'EMI Frequency'],
                     ['bulletPayment', 'Bullet Payment'],
                     ['instalmentEndDate', 'Instalment End Date'],
+                    ['expiryDate', 'Expiry Date'],
                   ]}
                 />
               </div>
@@ -365,6 +379,7 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
                         <th>Principal Amount (₹)</th>
                         <th>Instalment Amt (₹)</th>
                         <th>Interest (₹)</th>
+                        <th>Capitalized Interest (₹)</th>
                         <th>Principal (₹)</th>
                         <th>Balance Amount (₹)</th>
                       </tr>
@@ -373,15 +388,16 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
                       {repaymentRows.length ? repaymentRows.map((row, index) => (
                         <tr key={`${row.month}-${index}`}>
                           <td className="row-number">{row.month}</td>
-                          <td>{formatCurrencyCell(index === 0 ? Number(form.loanAmount) : repaymentRows[index - 1].balance)}</td>
+                          <td>{formatCurrencyCell(row.openingBalance)}</td>
                           <td>{formatCurrencyCell(row.instalment)}</td>
                           <td>{formatCurrencyCell(row.interest)}</td>
+                          <td>{formatCurrencyCell(row.capitalizedInterest || 0)}</td>
                           <td>{formatCurrencyCell(row.principal)}</td>
                           <td><strong>{formatCurrencyCell(row.balance)}</strong></td>
                         </tr>
                       )) : (
                         <tr>
-                          <td colSpan="6" className="table-empty-cell">
+                          <td colSpan="7" className="table-empty-cell">
                             No repayment schedule is available for this application.
                           </td>
                         </tr>
@@ -389,6 +405,11 @@ export default function RetailLoanApplicationView({ application, onBack, backLab
                     </tbody>
                   </table>
                 </div>
+                {repaymentRows.length > 0 && (
+                  <p className="retail-section-subtitle">
+                    Total interest (including capitalized moratorium interest): {formatCurrencyCell(totalScheduledInterest)}
+                  </p>
+                )}
               </div>
             )}
 
