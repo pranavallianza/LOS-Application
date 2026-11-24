@@ -126,7 +126,7 @@ export function createApplicationForm(application) {
       .map((field) => [field, application[field]]),
   );
 
-  return {
+  const mergedForm = {
     ...initialForm,
     ...applicationFields,
     ...savedForm,
@@ -158,6 +158,12 @@ export function createApplicationForm(application) {
       ...savedDisbursement,
     },
   };
+
+  mergedForm.repaymentType = getGoldLoanRepaymentType(mergedForm);
+  mergedForm.expiryDate = calculateGoldLoanExpiryDate(mergedForm);
+  mergedForm.repaymentStartDate = calculateGoldLoanRepaymentStartDate(mergedForm);
+
+  return mergedForm;
 }
 
 export function getApplicationId(application) {
@@ -405,6 +411,42 @@ const isValidDate = (value) => {
     && date.getDate() === day;
 };
 
+function addMonthsToDate(value, months) {
+  if (!isValidDate(value) || !Number.isInteger(months)) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const targetMonth = year * 12 + month - 1 + months;
+  const targetYear = Math.floor(targetMonth / 12);
+  const targetMonthIndex = targetMonth % 12;
+  const lastDay = new Date(targetYear, targetMonthIndex + 1, 0).getDate();
+  return `${targetYear}-${String(targetMonthIndex + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function getGoldLoanRepaymentType(form) {
+  if (form.emi === 'No') return 'Bullet';
+  if (form.emi === 'Yes' && ['EMI', 'Partial'].includes(form.repaymentType)) return form.repaymentType;
+  if (form.emi === 'Yes') return '';
+  return form.repaymentType || '';
+}
+
+function shouldShowRepaymentStartDate(form) {
+  return form.emi === 'Yes' && ['EMI', 'Partial'].includes(getGoldLoanRepaymentType(form));
+}
+
+function calculateGoldLoanExpiryDate(form) {
+  const tenure = Number(form.tenureMonths);
+  if (!isValidDate(form.sanctionedDate) || !Number.isInteger(tenure) || tenure <= 0) return '';
+  return addMonthsToDate(form.sanctionedDate, tenure);
+}
+
+function calculateGoldLoanRepaymentStartDate(form) {
+  if (!shouldShowRepaymentStartDate(form)) return '';
+  if (!isValidDate(form.sanctionedDate)) return '';
+  const startDate = addMonthsToDate(form.sanctionedDate, 1);
+  const expiryDate = calculateGoldLoanExpiryDate(form);
+  if (isValidDate(expiryDate) && startDate > expiryDate) return expiryDate;
+  return startDate;
+}
+
 function validateTextLength(
   key,
   value,
@@ -640,16 +682,22 @@ function validateStep(stepIndex, values) {
     validateWholeNumber('tenureMonths', values.tenureMonths, 'Tenure', errors, { required: true, min: 1, max: 600 });
     validateName('sanctionAuthority', values.sanctionAuthority, 'Sanction authority', errors, true, MAX_NAME_LENGTH);
     validateNumber('instalmentAmount', values.instalmentAmount, 'Instalment amount', errors, { required: true, positive: true });
+    if (values.emi === 'Yes' && !['EMI', 'Partial'].includes(values.repaymentType)) {
+      errors.repaymentType = 'Select EMI or Partial as the repayment type.';
+    } else if (values.emi === 'No' && values.repaymentType !== 'Bullet') {
+      errors.repaymentType = 'Repayment type must be Bullet when EMI is No.';
+    } else if (!['EMI', 'Bullet', 'Partial'].includes(values.repaymentType)) {
+      errors.repaymentType = 'Select a repayment type.';
+    }
     validateDate('expiryDate', values.expiryDate, 'Expiry date', errors, true);
-    validateDate('repaymentStartDate', values.repaymentStartDate, 'Repayment start date', errors, true);
+    if (shouldShowRepaymentStartDate(values)) {
+      validateDate('repaymentStartDate', values.repaymentStartDate, 'Repayment start date', errors, true);
+    }
     if (!['Walkin', 'Lead by staff', 'Referred by Customer'].includes(values.customerSourced)) {
       errors.customerSourced = 'Select how the customer was sourced.';
     }
     if (!['Maturity', 'Monthly', 'Quarterly', 'Half Yearly'].includes(values.interestPayment)) {
       errors.interestPayment = 'Select an interest payment frequency.';
-    }
-    if (!['EMI', 'Bullet', 'Partial'].includes(values.repaymentType)) {
-      errors.repaymentType = 'Select a repayment type.';
     }
     if (!['Yes', 'No'].includes(values.accountClosure)) {
       errors.accountClosure = 'Select Yes or No for account closure.';
@@ -658,11 +706,13 @@ function validateStep(stepIndex, values) {
       && values.expiryDate <= values.sanctionedDate) {
       errors.expiryDate = 'Expiry date must be after the sanctioned date.';
     }
-    if (isValidDate(values.sanctionedDate) && isValidDate(values.repaymentStartDate)
+    if (shouldShowRepaymentStartDate(values)
+      && isValidDate(values.sanctionedDate) && isValidDate(values.repaymentStartDate)
       && values.repaymentStartDate < values.sanctionedDate) {
       errors.repaymentStartDate = 'Repayment start date cannot precede the sanctioned date.';
     }
-    if (isValidDate(values.expiryDate) && isValidDate(values.repaymentStartDate)
+    if (shouldShowRepaymentStartDate(values)
+      && isValidDate(values.expiryDate) && isValidDate(values.repaymentStartDate)
       && values.repaymentStartDate > values.expiryDate) {
       errors.repaymentStartDate = 'Repayment start date cannot be after the expiry date.';
     }
@@ -1756,12 +1806,32 @@ export function LoanApplicationFormPage({
   const updateField = (field, value) => {
     const nextForm = { ...form, [field]: value };
     const fieldKeys = [field];
+
     if (field === 'tenureMonths') {
       nextForm.charges = { ...form.charges, tenureMonths: value };
       if (String(form.instalments ?? '').trim() || validationErrors.instalments) {
         fieldKeys.push('instalments');
       }
     }
+
+    if (field === 'emi') {
+      nextForm.repaymentType = value === 'No' ? 'Bullet' : '';
+      fieldKeys.push('repaymentType');
+    }
+
+    if (field === 'repaymentType' && nextForm.emi === 'No') {
+      nextForm.repaymentType = 'Bullet';
+    }
+
+    if (['emi', 'repaymentType', 'sanctionedDate', 'tenureMonths'].includes(field)) {
+      nextForm.repaymentType = getGoldLoanRepaymentType(nextForm);
+      nextForm.expiryDate = calculateGoldLoanExpiryDate(nextForm);
+      nextForm.repaymentStartDate = calculateGoldLoanRepaymentStartDate(nextForm);
+      ['expiryDate', 'repaymentStartDate'].forEach((key) => {
+        if (!fieldKeys.includes(key)) fieldKeys.push(key);
+      });
+    }
+
     updateForm(nextForm, fieldKeys);
   };
 
@@ -2509,34 +2579,6 @@ export function LoanApplicationFormPage({
                     <LoanField id="sanctionLimit" label="Sanction Limit (Rs.)" type="number" min="0.01" step="any" value={form.sanctionLimit} error={validationErrors.sanctionLimit} readOnly required />
                     <LoanField id="tenureMonths" label="Tenure (months)" type="number" min="1" max="600" step="1" value={form.tenureMonths} onChange={(value) => updateField('tenureMonths', value)} error={validationErrors.tenureMonths} required />
                     <LoanField id="interestRate" label="Interest Rate (%)" type="number" min="0" max="100" step="any" value={form.interestRate} onChange={(value) => updateField('interestRate', value)} error={validationErrors.interestRate} required />
-                    <LoanField id="sanctionAuthority" label="Sanction Authority" value={form.sanctionAuthority} onChange={(value) => updateField('sanctionAuthority', value)} error={validationErrors.sanctionAuthority} maxLength={MAX_NAME_LENGTH} onInvalidLengthInput={() => invalidLengthInput('sanctionAuthority', 'Sanction authority', MAX_NAME_LENGTH)} required />
-                  </div>
-                  <div className="loan-form-grid gold-standard-width-grid gold-form-row">
-                    <LoanField id="instalments" label="No. of Instalments" type="number" min="1" max={form.tenureMonths || 600} step="1" value={form.instalments} onChange={(value) => updateField('instalments', value)} error={validationErrors.instalments} required />
-                    <LoanField id="instalmentAmount" label="Instalment Amount (Rs.)" type="number" min="0.01" step="any" value={form.instalmentAmount} onChange={(value) => updateField('instalmentAmount', value)} error={validationErrors.instalmentAmount} required />
-                    <LoanField id="emi" label="EMI (Y/N)" value={form.emi} onChange={(value) => updateField('emi', value)} options={yesNoOptions} error={validationErrors.emi} required />
-                    <LoanField
-                      id="repaymentType"
-                      label="Re-Payment Type"
-                      value={form.repaymentType}
-                      onChange={(value) => updateField('repaymentType', value)}
-                      options={['EMI', 'Bullet', 'Partial'].map((value) => ({ value, label: value }))}
-                      error={validationErrors.repaymentType}
-                      required
-                    />
-                  </div>
-                  <div className="loan-form-grid gold-standard-width-grid gold-form-row">
-                    <LoanField id="repaymentStartDate" label="Re-start Date" type="date" value={form.repaymentStartDate} onChange={(value) => updateField('repaymentStartDate', value)} error={validationErrors.repaymentStartDate} required />
-                    <LoanField id="expiryDate" label="Expiry Date" type="date" value={form.expiryDate} onChange={(value) => updateField('expiryDate', value)} error={validationErrors.expiryDate} required />
-                    <LoanField
-                      id="customerSourced"
-                      label="Customer Sourced"
-                      value={form.customerSourced}
-                      onChange={(value) => updateField('customerSourced', value)}
-                      options={['Walkin', 'Lead by staff', 'Referred by Customer'].map((value) => ({ value, label: value }))}
-                      error={validationErrors.customerSourced}
-                      required
-                    />
                     <LoanField
                       id="interestPayment"
                       label="Interest Payment"
@@ -2546,6 +2588,39 @@ export function LoanApplicationFormPage({
                       error={validationErrors.interestPayment}
                       required
                     />
+                  </div>
+                  <div className="loan-form-grid gold-standard-width-grid gold-form-row">
+                    <LoanField id="sanctionAuthority" label="Sanction Authority" value={form.sanctionAuthority} onChange={(value) => updateField('sanctionAuthority', value)} error={validationErrors.sanctionAuthority} maxLength={MAX_NAME_LENGTH} onInvalidLengthInput={() => invalidLengthInput('sanctionAuthority', 'Sanction authority', MAX_NAME_LENGTH)} required />
+                    <LoanField id="instalments" label="No. of Instalments" type="number" min="1" max={form.tenureMonths || 600} step="1" value={form.instalments} onChange={(value) => updateField('instalments', value)} error={validationErrors.instalments} required />
+                    <LoanField id="instalmentAmount" label="Instalment Amount (Rs.)" type="number" min="0.01" step="any" value={form.instalmentAmount} onChange={(value) => updateField('instalmentAmount', value)} error={validationErrors.instalmentAmount} required />
+                    <LoanField id="emi" label="EMI (Y/N)" value={form.emi} onChange={(value) => updateField('emi', value)} options={yesNoOptions} error={validationErrors.emi} required />
+                  </div>
+                  <div className="loan-form-grid gold-standard-width-grid gold-form-row">
+                    <LoanField
+                      id="repaymentType"
+                      label="Re-Payment Type"
+                      value={form.repaymentType}
+                      onChange={(value) => updateField('repaymentType', value)}
+                      options={(form.emi === 'Yes' ? ['EMI', 'Partial'] : ['Bullet']).map((value) => ({ value, label: value }))}
+                      error={validationErrors.repaymentType}
+                      readOnly={form.emi === 'No'}
+                      required
+                    />
+                    <LoanField id="expiryDate" label="Expiry Date" type="date" value={form.expiryDate} onChange={(value) => updateField('expiryDate', value)} error={validationErrors.expiryDate} readOnly required />
+                    {shouldShowRepaymentStartDate(form) && (
+                      <LoanField id="repaymentStartDate" label="Repayment Start Date" type="date" value={form.repaymentStartDate} onChange={(value) => updateField('repaymentStartDate', value)} error={validationErrors.repaymentStartDate} readOnly required />
+                    )}
+                    <LoanField
+                      id="customerSourced"
+                      label="Customer Sourced"
+                      value={form.customerSourced}
+                      onChange={(value) => updateField('customerSourced', value)}
+                      options={['Walkin', 'Lead by staff', 'Referred by Customer'].map((value) => ({ value, label: value }))}
+                      error={validationErrors.customerSourced}
+                      required
+                    />
+                  </div>
+                  <div className="loan-form-grid gold-standard-width-grid gold-form-row">
                     <LoanField id="accountClosure" label="Account Closure (Y/N)" value={form.accountClosure} onChange={(value) => updateField('accountClosure', value)} options={yesNoOptions} error={validationErrors.accountClosure} required />
                   </div>
                 </div>
