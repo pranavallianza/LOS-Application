@@ -41,3 +41,53 @@ export async function createBankBranch(branch) {
     throw new Error(getErrorMessage(error));
   }
 }
+
+export async function getBankBranches(signal) {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+  }
+
+  const storedAuthData = window.localStorage.getItem("authData");
+  if (!storedAuthData) {
+    throw new Error("Your session is unavailable. Please sign in again.");
+  }
+
+  let authData;
+  try {
+    authData = JSON.parse(storedAuthData);
+  } catch {
+    throw new Error("Your session is invalid. Please sign in again.");
+  }
+
+  if (!authData?.accessToken) {
+    throw new Error("Your session has expired. Please sign in again.");
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/bank-profile/branch`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${authData.accessToken}`,
+      },
+      cache: "no-store",
+      signal,
+    });
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok || result?.success === false) {
+      throw new Error(
+        result?.message || result?.error || `Unable to load branches (${response.status}).`,
+      );
+    }
+
+    if (!Array.isArray(result?.data)) {
+      throw new Error("The branch service returned an unsupported branch list.");
+    }
+
+    return result.data;
+  } catch (error) {
+    if (error.name === "AbortError") throw error;
+    throw new Error(getErrorMessage(error));
+  }
+}
