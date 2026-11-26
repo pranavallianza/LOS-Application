@@ -254,6 +254,8 @@ const initialForm = {
   dependents: '',
   loanProductType: '',
   loanAmount: '',
+  emiBounce: '',
+  noOfBounce: '',
   interestRate: '',
   loanPurpose: '',
   otherLoanPurpose: '',
@@ -316,6 +318,8 @@ const getLeadFormValues = (lead) => {
     dependents: lead.dependents ?? lead.numberOfDependents ?? '',
     loanProductType: lead.loanProductType || lead.product || '',
     loanAmount: lead.loanAmount || String(lead.amount || '').replace(/,/g, ''),
+    emiBounce: lead.emiBounce ?? '',
+    noOfBounce: lead.noOfBounce ?? '',
     loanPurpose: loanPurposeValue,
     otherLoanPurpose: lead.otherLoanPurpose || '',
     employmentType: lead.employmentType === 'Employee' ? 'Salaried' : lead.employmentType || '',
@@ -911,6 +915,7 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
     setForm((current) => ({
       ...current,
       [name]: normalizedValue,
+      ...(name === 'emiBounce' && normalizedValue !== 'Yes' ? { noOfBounce: '' } : {}),
       ...(name === 'acquisitionChannel' && !['bankgenerated', 'branch'].includes(normalizeLookupValue(normalizedValue))
         ? { referralDate: '', partnerId: '', partnerName: '', employeeId: '', employeeName: '' }
         : {}),
@@ -1410,7 +1415,6 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <input name="monthlyEmi" value={computedMonthlyEmi ? formatCurrency(Number(computedMonthlyEmi)) : ''} readOnly style={{ minHeight: '42px', background: '#f6f8fa' }} />
         {calculatedEmi !== null ? <span style={{ color: '#708087', fontSize: '11px', fontWeight: 400 }}>{`Calculated over ${computedInstalments} months at ${annualInterestRate}% annual interest on the loan amount after down payment.`}</span> : null}
       </label>
-
       <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         <span>Total Interest</span>
         <input name="totalInterest" value={computedTotalInterest ? formatCurrency(Number(computedTotalInterest)) : ''} readOnly style={{ minHeight: '42px', background: '#f6f8fa' }} />
@@ -1420,7 +1424,20 @@ export default function NewLead({ open, onClose, onCreate, onUpdate, initialData
         <span>Total Amount</span>
         <input name="securityAmount" value={computedTotalAmount ? formatCurrency(Number(computedTotalAmount)) : ''} readOnly style={{ minHeight: '42px', background: '#f6f8fa' }} />
       </label>
-
+      <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <span>EMI Bounce</span>
+        <select name="emiBounce" value={form.emiBounce} onChange={handleChange} style={{ minHeight: '42px' }}>
+          <option value="">Select</option>
+          <option value="Yes">Yes</option>
+          <option value="No">No</option>
+        </select>
+      </label>
+      {form.emiBounce === 'Yes' ? (
+        <label className="lead-field" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <span>No. of Bounce <em>*</em></span>
+          <input name="noOfBounce" type="number" min="1" step="1" inputMode="numeric" value={form.noOfBounce} onChange={handleChange} required style={{ minHeight: '42px' }} />
+        </label>
+      ) : null}
     </div>
   );
 
