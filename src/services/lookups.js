@@ -1,9 +1,6 @@
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL
-).replace(/\/+$/, "");
-const API_V1_URL = /\/api\/v\d+$/i.test(API_BASE_URL)
-  ? API_BASE_URL
-  : `${API_BASE_URL}/api`;
+import axios from "axios";
+
+const API_V1_URL = "/api/lookup-proxy";
 
 function getRequestHeaders() {
   const storedAuthData = window.localStorage.getItem("authData");
@@ -30,23 +27,32 @@ function getRequestHeaders() {
 }
 
 async function requestLookupApi(path, options = {}) {
-  const response = await fetch(`${API_V1_URL}${path}`, {
-    ...options,
-    headers: getRequestHeaders(),
-    cache: "no-store",
-  });
-  console.log(`Lookup API request to ${path} returned status ${response.status}`);
-  console.log(response, "ad");
-  console.log(options, "options");
+  try {
+    const response = await axios({
+      method: options.method || "GET",
+      url: `${API_V1_URL}${path}`,
+      data: options.body,
+      params: options.params,
+      signal: options.signal,
+      headers: getRequestHeaders(),
+    });
+    const result = response.data;
 
-  const result = await response.json().catch(() => null);
-  if (!response.ok || result?.success === false) {
-    throw new Error(
-      result?.message || result?.error || `Lookup request failed (${response.status}).`,
-    );
+    if (result?.success === false) {
+      throw new Error(result.message || result.error || "The lookup request failed.");
+    }
+
+    return result;
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message = error.response?.data?.message || error.response?.data?.error;
+      if (typeof message === "string" && message.trim()) throw new Error(message);
+      if (!error.response) {
+        throw new Error("Unable to reach the lookup service. Check your connection and try again.");
+      }
+    }
+    throw error instanceof Error ? error : new Error("The lookup request failed.");
   }
-
-  return result;
 }
 
 function toDisplayStatus(status, isActive = true) {
@@ -94,7 +100,7 @@ export async function getLookupTypes(signal) {
     description: lookup.description ?? "",
     status: toDisplayStatus(lookup.status, lookup.isActive),
     isFixed: Boolean(lookup.isFixed),
-    subLookups: [],
+    subLookups: Array.isArray(lookup.subLookups) ? lookup.subLookups : [],
   }));
 }
 
@@ -107,7 +113,7 @@ export async function getLookupOptions(lookupTypeCode, signal) {
     throw new Error(`The lookup options for ${lookupTypeCode} were not returned as a list.`);
   }
   return result.data.map((option, index) => {
-    const name = option.description ?? option.name ?? option.code ?? "";
+    const name = option.description || option.name || option.code || "";
     return {
       id: option.id ?? option.code ?? `${lookupTypeCode}-${index}`,
       code: option.code ?? "",

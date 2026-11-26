@@ -1,13 +1,9 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
-const API_ROOT = API_BASE_URL?.replace(/\/api\/?$/i, '');
+const API_ROOT = '/api/lead-proxy';
 let lookupsRequest;
 
 function getApiUrl() {
-  if (!API_ROOT) {
-    throw new Error('NEXT_PUBLIC_API_URL is not configured.');
-  }
   return API_ROOT;
 }
 
@@ -56,7 +52,7 @@ async function request(method, path, { data, params } = {}) {
   try {
     const response = await axios({
       method,
-      url: `${getApiUrl()}/api${path}`,
+      url: `${getApiUrl()}${path}`,
       data,
       params,
       headers: getHeaders(),

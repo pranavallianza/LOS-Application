@@ -1,14 +1,20 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Eye, LoaderCircle, Package, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Eye, LoaderCircle, Package, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import PageHeader from '../../components/PageHeader';
-import { saveProductManagementProduct } from '../../services/productManagement';
+import {
+  getProductManagementProducts,
+  saveProductManagementProduct,
+  updateProductManagementProduct
+} from '../../services/productManagement';
+import { getLookupOptions as fetchLookupOptions, getLookupTypes } from '../../services/lookups';
 
+const PRODUCT_PAGE_SIZE = 10;
 const STORAGE_KEY = 'los_product_management_records';
 const initialForm = {
-  productCode: '', productName: '', emiFixedDate: '', emi: '', emiType: '', minTenure: '', minTenureUnit: 'Months', maxTenure: '', maxTenureUnit: 'Months',
+  productCode: '', productName: '', emiFixedDate: '', emi: '', emiType: '', minTenure: '', minTenureUnit: '', maxTenure: '', maxTenureUnit: '',
   minAmount: '', maxAmount: '', penalty: '', penaltyPercent: '', daysInYear: '', intBaseMethod: '', interestFrequency: '', calculationMode: '',
   delegationPower: [{ id: 1, limit: '', power: '' }]
 };
@@ -23,35 +29,106 @@ const directoryFieldList = [
   ['productCode', 'Product Code'], ['productName', 'Product Name'], ['emi', 'E.M.I.'], ['minTenure', 'Tenure'],
   ['minAmount', 'Amount Range'], ['penalty', 'Penalty']
 ];
+const lookupNamesByField = {
+  emiFixedDate: ['EMI Fixed Date', 'EMI Fixed Date Applicable', 'Yes No', 'Yes/No'],
+  emi: ['EMI', 'E.M.I.', 'EMI Timing', 'Repayment Timing'],
+  emiType: ['EMI Type', 'E.M.I. Type'],
+  minTenureUnit: ['Unit', 'Tenure Unit', 'Tenure'],
+  maxTenureUnit: ['Unit', 'Tenure Unit', 'Tenure'],
+  penalty: ['Penalty', 'Yes No', 'Yes/No'],
+  intBaseMethod: ['Int Base Method', 'Interest Base Method'],
+  interestFrequency: ['Interest Calculation Frequency'],
+  calculationMode: ['Interest Calculation Mode']
+};
+const supportedEmiValues = ['Arrears', 'Int in Advance'];
+const lookupLabelsByField = {
+  emiFixedDate: 'EMI Fixed Date',
+  emi: 'E.M.I.',
+  emiType: 'E.M.I. Type',
+  minTenureUnit: 'Min. Tenure Unit',
+  maxTenureUnit: 'Max. Tenure Unit',
+  penalty: 'Penalty',
+  intBaseMethod: 'Int Base Method',
+  interestFrequency: 'Interest Calculation Frequency',
+  calculationMode: 'Interest Calculation Mode'
+};
+
+function normalizeLookupValue(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function findLookupType(lookupTypes, field) {
+  const expectedNames = lookupNamesByField[field].map(normalizeLookupValue);
+  return expectedNames
+    .map((expectedName) => lookupTypes.find((item) => item.status === 'Active'
+      && [item.name, item.code, item.description]
+        .some((value) => normalizeLookupValue(value) === expectedName)))
+    .find(Boolean);
+}
+
+function getLookupOptions(lookupTypes, field) {
+  const lookup = findLookupType(lookupTypes, field);
+
+  return (lookup?.subLookups || [])
+    .filter((option) => option
+      && option.isActive !== false
+      && String(option.isActive).toLowerCase() !== 'false'
+      && String(option.status || 'ACTIVE').toUpperCase() === 'ACTIVE')
+    .map((option, index) => {
+      const optionValues = [option.name, option.description, option.code].filter(Boolean);
+      const supportedValue = ['emi', 'emiType'].includes(field)
+        ? supportedEmiValues.find((candidate) => optionValues.some((value) => (
+          normalizeLookupValue(value) === normalizeLookupValue(candidate)
+        )))
+        : null;
+      if (['emi', 'emiType'].includes(field) && !supportedValue) return null;
+
+      const value = supportedValue || option.description || option.name || option.code || '';
+      return {
+        id: option.id ?? option.code ?? `${lookup?.id || field}-${index}`,
+        code: option.code ?? '',
+        label: String(value),
+        value: String(value),
+        displayOrder: Number(option.display_order ?? option.displayOrder ?? index + 1)
+      };
+    })
+    .filter((option) => option?.value)
+    .sort((left, right) => left.displayOrder - right.displayOrder);
+}
+
+function lookupValueForField(lookupOptions, field, value) {
+  if (value === undefined || value === null || value === '') return '';
+  const normalizedValue = normalizeLookupValue(value === true ? 'yes' : value === false ? 'no' : value);
+  const match = (lookupOptions[field] || []).find((option) => (
+    [option.value, option.label, option.code].some((candidate) => (
+      normalizeLookupValue(candidate) === normalizedValue
+    ))
+  ));
+  return match?.value ?? String(value);
+}
 
 function tenureInMonths(value, unit) {
-  return Number(value) * (unit === 'Years' ? 12 : 1);
+  return Number(value) * (String(unit).toLowerCase().startsWith('year') ? 12 : 1);
 }
 
 function formatTenure(value, unit) {
   if (!value) return '';
-  const normalizedUnit = unit || 'Months';
-  return `${value} ${normalizedUnit.toLowerCase().replace(/s$/, '')}${Number(value) === 1 ? '' : 's'}`;
+  if (!unit) return String(value);
+  const singularUnit = unit.toLowerCase().replace(/s$/, '');
+  return `${value} ${singularUnit}${Number(value) === 1 ? '' : 's'}`;
 }
 
 function normalizeYesNo(value) {
-  if (value === true || value === 'true' || value === 'Yes') return 'Yes';
-  if (value === false || value === 'false' || value === 'No' || value === '') return 'No';
+  if (value === true || ['true', 'yes', 'y', '1'].includes(String(value).toLowerCase())) return 'Yes';
   return Number(value) > 0 ? 'Yes' : 'No';
 }
 
 function normalizeEmiTiming(value) {
-  return ['Arrears', 'Int in Advance'].includes(value) ? value : '';
+  return value == null ? '' : String(value);
 }
 
-function readProducts() {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+function isYesValue(value) {
+  return ['true', 'yes', 'y', '1'].includes(String(value ?? '').trim().toLowerCase());
 }
 
 function persistProducts(products) {
@@ -63,11 +140,17 @@ function persistProducts(products) {
   return true;
 }
 
-function validate(form, products, editingId) {
+function validate(form, products, editingId, lookupOptions) {
   const errors = {};
-  const required = ['productCode', 'productName', 'emiFixedDate', 'emi', 'emiType', 'minTenure', 'maxTenure', 'minAmount', 'maxAmount', 'penalty', 'daysInYear', 'intBaseMethod', 'interestFrequency', 'calculationMode'];
-  if (form.penalty === 'Yes') required.push('penaltyPercent');
+  const required = ['productCode', 'productName', 'emiFixedDate', 'minTenure', 'minTenureUnit', 'maxTenure', 'maxTenureUnit', 'minAmount', 'maxAmount', 'penalty', 'daysInYear', 'intBaseMethod', 'interestFrequency', 'calculationMode'];
+  if (isYesValue(form.penalty)) required.push('penaltyPercent');
   required.forEach((field) => { if (!String(form[field]).trim()) errors[field] = 'This field is required.'; });
+  [...Object.keys(lookupNamesByField), 'minTenureUnit', 'maxTenureUnit'].forEach((field) => {
+    const options = lookupOptions[field] || [];
+    if (form[field] && !options.some((option) => option.value === form[field])) {
+      errors[field] = options.length ? 'Select a value from the lookup list.' : 'No active lookup options are configured.';
+    }
+  });
   if (form.productCode && !/^[A-Z0-9][A-Z0-9_-]{1,19}$/i.test(form.productCode.trim())) errors.productCode = 'Use 2–20 letters, numbers, hyphens, or underscores.';
   if (form.productName && (form.productName.trim().length < 2 || form.productName.trim().length > 100)) errors.productName = 'Enter a product name between 2 and 100 characters.';
   if (form.productCode && products.some((product) => product.id !== editingId && product.productCode.toLowerCase() === form.productCode.trim().toLowerCase())) errors.productCode = 'A product with this code already exists.';
@@ -119,8 +202,96 @@ export default function ProductManagementPage() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
   const [dialog, setDialog] = useState(null);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState('');
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [lookupTypes, setLookupTypes] = useState([]);
+  const [lookupLoading, setLookupLoading] = useState(true);
+  const [lookupError, setLookupError] = useState('');
 
-  useEffect(() => setProducts(readProducts()), []);
+  useEffect(() => {
+    const controller = new AbortController();
+    setListLoading(true);
+    setListError('');
+
+    getProductManagementProducts({
+      page: currentPage,
+      size: PRODUCT_PAGE_SIZE,
+      signal: controller.signal
+    })
+      .then((result) => {
+        setProducts(result.items);
+        setTotalProducts(result.totalElements);
+        setTotalPages(result.totalPages);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setListError(error.message || 'Unable to load loan products.');
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setListLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [currentPage, reloadKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProductLookups() {
+      try {
+        const types = await getLookupTypes(controller.signal);
+        const requiredTypes = new Map();
+        Object.keys(lookupNamesByField).forEach((field) => {
+          const lookup = findLookupType(types, field);
+          if (lookup?.code && !getLookupOptions(types, field).length) {
+            requiredTypes.set(lookup.code, lookup);
+          }
+        });
+
+        const loadErrors = [];
+        const loadedTypes = await Promise.all([...requiredTypes.values()].map(async (lookup) => {
+          try {
+            const subLookups = await fetchLookupOptions(lookup.code, controller.signal);
+            return { ...lookup, subLookups };
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            loadErrors.push(`${lookup.name}: ${error.message || 'Unable to load options.'}`);
+            return lookup;
+          }
+        }));
+
+        if (controller.signal.aborted) return;
+        const loadedByCode = new Map(loadedTypes.map((lookup) => [lookup.code, lookup]));
+        setLookupTypes(types.map((lookup) => loadedByCode.get(lookup.code) || lookup));
+        if (loadErrors.length) setLookupError(loadErrors.join(' '));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLookupError(error.message || 'Unable to load lookup options.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setLookupLoading(false);
+      }
+    }
+
+    loadProductLookups();
+    return () => controller.abort();
+  }, []);
+
+  const lookupOptions = useMemo(() => Object.keys(lookupNamesByField).reduce((options, field) => {
+    options[field] = getLookupOptions(lookupTypes, field);
+    return options;
+  }, {}), [lookupTypes]);
+  const missingLookupLabels = useMemo(() => (
+    Object.keys(lookupNamesByField)
+      .filter((field) => lookupOptions[field].length === 0)
+      .map((field) => lookupLabelsByField[field])
+      .filter((label, index, labels) => labels.indexOf(label) === index)
+  ), [lookupOptions]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -133,7 +304,11 @@ export default function ProductManagementPage() {
   }
 
   function openCreate() {
-    setForm(initialForm);
+    const tenureUnits = lookupOptions.minTenureUnit;
+    const defaultUnit = tenureUnits.find((option) => option.value.toLowerCase().startsWith('month'))?.value
+      || tenureUnits[0]?.value
+      || '';
+    setForm({ ...initialForm, minTenureUnit: defaultUnit, maxTenureUnit: defaultUnit });
     setErrors({});
     setStatus(null);
     setDialog({ type: 'form' });
@@ -143,13 +318,15 @@ export default function ProductManagementPage() {
     setForm({
       ...initialForm,
       ...Object.fromEntries(Object.keys(initialForm).map((field) => [field, String(product[field] ?? initialForm[field])])),
-      emiFixedDate: normalizeYesNo(product.emiFixedDate),
-      emi: normalizeEmiTiming(product.emi),
-      emiType: normalizeEmiTiming(product.emiType),
+      emiFixedDate: lookupValueForField(lookupOptions, 'emiFixedDate', normalizeYesNo(product.emiFixedDate)),
+      emi: lookupValueForField(lookupOptions, 'emi', normalizeEmiTiming(product.emi)),
+      emiType: lookupValueForField(lookupOptions, 'emiType', normalizeEmiTiming(product.emiType)),
+      minTenureUnit: lookupValueForField(lookupOptions, 'minTenureUnit', product.minTenureUnit),
+      maxTenureUnit: lookupValueForField(lookupOptions, 'maxTenureUnit', product.maxTenureUnit),
       delegationPower: Array.isArray(product.delegationPower) && product.delegationPower.length
         ? product.delegationPower.map((row, index) => ({ ...row, id: index + 1, limit: String(row.limit ?? '') }))
         : initialForm.delegationPower,
-      penalty: normalizeYesNo(product.penalty)
+      penalty: lookupValueForField(lookupOptions, 'penalty', normalizeYesNo(product.penalty))
     });
     setErrors({});
     setStatus(null);
@@ -160,7 +337,7 @@ export default function ProductManagementPage() {
     setForm((current) => ({
       ...current,
       [field]: field === 'productCode' ? value.toUpperCase() : value,
-      ...(field === 'penalty' && value === 'No' ? { penaltyPercent: '' } : {})
+      ...(field === 'penalty' && !isYesValue(value) ? { penaltyPercent: '' } : {})
     }));
     setErrors((current) => ({ ...current, [field]: '', ...(field === 'penalty' ? { penaltyPercent: '' } : {}) }));
     setStatus(null);
@@ -199,7 +376,7 @@ export default function ProductManagementPage() {
   async function submit(event) {
     event.preventDefault();
     const editingProduct = dialog?.product;
-    const nextErrors = validate(form, products, editingProduct?.id);
+    const nextErrors = validate(form, products, editingProduct?.id, lookupOptions);
     setErrors(nextErrors);
     const invalid = Object.keys(nextErrors)[0];
     if (invalid) {
@@ -215,33 +392,52 @@ export default function ProductManagementPage() {
       updatedAt: new Date().toISOString()
     };
 
-    if (editingProduct) {
-      storeProducts(products.map((product) => product.id === editingProduct.id ? record : product));
-      setStatus({ type: 'success', text: 'Product updated.' });
-      setDialog(null);
-      return;
-    }
+    const payload = {
+      product_code: record.productCode,
+      product_name: record.productName,
+      ...(form.emi.trim() ? { emi: form.emi } : {}),
+      ...(form.emiType.trim() ? { emi_type: form.emiType } : {}),
+      min_tenure_months: tenureInMonths(form.minTenure, form.minTenureUnit),
+      max_tenure_months: tenureInMonths(form.maxTenure, form.maxTenureUnit),
+      min_amount: Number(form.minAmount),
+      max_amount: Number(form.maxAmount),
+      penalty: isYesValue(form.penalty),
+      penalty_percent: isYesValue(form.penalty) ? Number(form.penaltyPercent) : null,
+      no_of_days_in_year: Number(form.daysInYear),
+      int_base_method: form.intBaseMethod,
+      interest_calculation_frequency: form.interestFrequency,
+      interest_calculation_mode: form.calculationMode,
+      delegation_of_power: form.delegationPower.map(({ limit, power }, index) => ({
+        Sr: String(index + 1),
+        limit: Number(limit),
+        power: power.trim()
+      }))
+    };
 
     setSaving(true);
     try {
-      const result = await saveProductManagementProduct({
-        product_code: record.productCode, product_name: record.productName, emi_fixed_date: form.emiFixedDate, emi: form.emi, emi_type: form.emiType,
-        min_tenure_months: tenureInMonths(form.minTenure, form.minTenureUnit), max_tenure_months: tenureInMonths(form.maxTenure, form.maxTenureUnit), min_amount: Number(form.minAmount),
-        max_amount: Number(form.maxAmount), penalty: form.penalty === 'Yes', penalty_percent: form.penalty === 'Yes' ? Number(form.penaltyPercent) : null,
-        no_of_days_in_year: Number(form.daysInYear), int_base_method: form.intBaseMethod,
-        interest_calculation_frequency: form.interestFrequency, interest_calculation_mode: form.calculationMode,
-        delegation_of_power: form.delegationPower.map(({ limit, power }) => ({ limit: Number(limit), power: power.trim() }))
-      });
-      console.log('Product Management API response:', result);
-      storeProducts([record, ...products]);
-      setSearch('');
+      const result = editingProduct
+        ? await updateProductManagementProduct(editingProduct.id, payload)
+        : await saveProductManagementProduct(payload);
+      if (editingProduct) {
+        storeProducts(products.map((product) => product.id === editingProduct.id ? record : product));
+      } else {
+        storeProducts([record, ...products]);
+        setSearch('');
+      }
       setDialog(null);
+      setCurrentPage(0);
+      setReloadKey((current) => current + 1);
       setStatus({
-        type: result.configured ? 'success' : 'info',
-        text: result.configured ? result.result?.message || 'Product saved successfully.' : 'Product saved in this browser. The product API endpoint is not configured.'
+        type: 'success',
+        text: result.result?.message || (editingProduct ? 'Product updated successfully.' : 'Product saved successfully.')
       });
     } catch (error) {
-      setStatus({ type: 'error', text: error.message || 'Unable to save product.' });
+      const message = error.message || 'Unable to save product.';
+      const detail = /valid emi type/i.test(message)
+        ? ` Submitted E.M.I. Type: "${form.emiType || '(empty)'}".`
+        : '';
+      setStatus({ type: 'error', text: `${message}${detail}` });
     } finally {
       setSaving(false);
     }
@@ -310,17 +506,20 @@ export default function ProductManagementPage() {
           <div className="pm-search-group">
             <label className="pm-search" htmlFor="pm-search"><Search size={16} aria-hidden="true" /><input id="pm-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search product code or name" /></label>
           </div>
-          <button type="button" className="pm-add" onClick={openCreate}><Plus size={16} /> Add new product</button>
+          <button type="button" className="pm-add" onClick={openCreate} disabled={lookupLoading || listLoading}><Plus size={16} /> Add new product</button>
         </div>
         {status && !dialog && <div className={`pm-status ${status.type}`} role={status.type === 'error' ? 'alert' : 'status'}>{status.type === 'success' ? <Check size={16} /> : null}{status.text}</div>}
+        {listError && <div className="pm-status error" role="alert">{listError}<button type="button" className="pm-btn" onClick={() => setReloadKey((current) => current + 1)}>Retry</button></div>}
 
         <section className="pm-list" aria-labelledby="pm-list-heading">
-          <div className="pm-list-head"><h2 id="pm-list-heading">Product directory</h2><span className="pm-count">{filteredProducts.length} of {products.length} products</span></div>
+          <div className="pm-list-head"><h2 id="pm-list-heading">Product directory</h2><span className="pm-count">{filteredProducts.length} shown / {totalProducts} total products</span></div>
           <div className="pm-table-wrap">
             <table className="pm-table">
               <thead><tr>{directoryFieldList.map(([, label]) => <th scope="col" key={label}>{label}</th>)}<th scope="col">Actions</th></tr></thead>
               <tbody>
-                {filteredProducts.map((product) => (
+                {listLoading && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}><LoaderCircle className="pm-spin" size={18} /> Loading products...</td></tr>}
+                {!listLoading && listError && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}>The product list could not be loaded.</td></tr>}
+                {!listLoading && !listError && filteredProducts.map((product) => (
                   <tr key={product.id}>
                     {directoryFieldList.map(([field, label]) => {
                       const value = product[field];
@@ -342,9 +541,14 @@ export default function ProductManagementPage() {
                     </div></td>
                   </tr>
                 ))}
-                {filteredProducts.length === 0 && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}><div className="pm-empty-icon"><Package size={20} /></div><strong>{search ? 'No matching products' : 'No products yet'}</strong><span>{search ? 'Try a different product code or name.' : 'Add your first loan product to start building the directory.'}</span></td></tr>}
+                {!listLoading && !listError && filteredProducts.length === 0 && <tr><td className="pm-empty" colSpan={directoryFieldList.length + 1}><div className="pm-empty-icon"><Package size={20} /></div><strong>{search ? 'No matching products' : 'No products yet'}</strong><span>{search ? 'Try a different product code or name.' : 'Add your first loan product to start building the directory.'}</span></td></tr>}
               </tbody>
             </table>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, padding: '12px 16px' }}>
+            <button type="button" className="pm-btn" onClick={() => setCurrentPage((page) => page - 1)} disabled={listLoading || currentPage <= 0}><ChevronLeft size={15} /> Previous</button>
+            <span className="pm-count">Page {currentPage + 1} of {totalPages}</span>
+            <button type="button" className="pm-btn" onClick={() => setCurrentPage((page) => page + 1)} disabled={listLoading || currentPage + 1 >= totalPages}>Next <ChevronRight size={15} /></button>
           </div>
         </section>
       </main>
@@ -357,45 +561,40 @@ export default function ProductManagementPage() {
             <form className="pm-form" onSubmit={submit} noValidate>
               <div className="pm-grid">
                 {fieldList.map(([field, label]) => {
-                  if (field === 'penaltyPercent' && form.penalty !== 'Yes') return null;
-                  const choices = ['emi', 'emiType'].includes(field)
-                    ? [['Arrears', 'Arrears'], ['Int in Advance', 'Int in Advance']]
-                    : field === 'emiFixedDate'
-                      ? [['Yes', 'Yes'], ['No', 'No']]
-                    : field === 'penalty'
-                    ? [['Yes', 'Yes'], ['No', 'No']]
-                    : field === 'interestFrequency'
-                      ? [['Monthly', 'Monthly'], ['Quarterly', 'Quarterly'], ['Half-yearly', 'Half-yearly'], ['Yearly', 'Yearly']]
-                      : field === 'intBaseMethod'
-                        ? [['Actual/365', 'Actual/365'], ['Actual/360', 'Actual/360'], ['30/360', '30/360'], ['Actual/Actual', 'Actual/Actual']]
-                      : field === 'calculationMode'
-                        ? [['Principal Outstanding', 'Principal Outstanding'], ['Principal Total', 'Principal Total']]
-                        : null;
+                  if (field === 'penaltyPercent' && !isYesValue(form.penalty)) return null;
+                  const choices = lookupOptions[field] || [];
+                  const isLookupField = Object.prototype.hasOwnProperty.call(lookupNamesByField, field);
+                  const isRequired = !['emi', 'emiType'].includes(field);
                   const numeric = ['minTenure', 'maxTenure', 'minAmount', 'maxAmount', 'penaltyPercent', 'daysInYear'].includes(field);
                   const longLabel = ['intBaseMethod', 'interestFrequency', 'calculationMode'].includes(field);
                   return (
                     <div className={`pm-field${longLabel ? ' pm-long-field' : ''}`} key={field}>
-                      <label htmlFor={`pm-${field}`}><span>{label} <em aria-hidden="true">*</em></span></label>
-                      {choices ? (
-                        <select id={`pm-${field}`} aria-label={label} value={form[field]} onChange={(event) => change(field, event.target.value)} aria-required="true" aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined}>
+                      <label htmlFor={`pm-${field}`}><span>{label}{isRequired && <> <em aria-hidden="true">*</em></>}</span></label>
+                      {isLookupField ? (
+                        <select id={`pm-${field}`} aria-label={label} value={form[field]} onChange={(event) => change(field, event.target.value)} disabled={lookupLoading || choices.length === 0} aria-required={isRequired} aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined}>
                           <option value="">Select {label.toLowerCase()}</option>
-                          {choices.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+                          {choices.map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}
                         </select>
                       ) : ['minTenure', 'maxTenure'].includes(field) ? (
                         <div className="pm-tenure-control">
-                          <input id={`pm-${field}`} name={field} aria-label={label} value={form[field]} onChange={(event) => change(field, event.target.value)} type="number" min="1" max={form[`${field}Unit`] === 'Years' ? '40' : '480'} step="1" inputMode="numeric" autoComplete="off" aria-required="true" aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined} />
-                          <select id={`pm-${field}Unit`} aria-label={`${label} unit`} value={form[`${field}Unit`]} onChange={(event) => change(`${field}Unit`, event.target.value)}>
-                            <option value="Months">Months</option><option value="Years">Years</option>
+                          <input id={`pm-${field}`} name={field} aria-label={label} value={form[field]} onChange={(event) => change(field, event.target.value)} type="number" min="1" max={String(form[`${field}Unit`]).toLowerCase().startsWith('year') ? '40' : '480'} step="1" inputMode="numeric" autoComplete="off" aria-required="true" aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined} />
+                          <select id={`pm-${field}Unit`} aria-label={`${label} unit`} value={form[`${field}Unit`]} onChange={(event) => change(`${field}Unit`, event.target.value)} disabled={lookupLoading || lookupOptions[`${field}Unit`].length === 0} aria-required="true" aria-invalid={Boolean(errors[`${field}Unit`])} aria-describedby={errors[`${field}Unit`] ? `pm-${field}Unit-error` : undefined}>
+                            <option value="">Select unit</option>
+                            {lookupOptions[`${field}Unit`].map((option) => <option key={option.id} value={option.value}>{option.label}</option>)}
                           </select>
                         </div>
                       ) : (
-                        <input id={`pm-${field}`} name={field} value={form[field]} onChange={(event) => change(field, event.target.value)} type={numeric ? 'number' : 'text'} min={field === 'daysInYear' ? '360' : numeric ? '0' : undefined} max={field === 'penaltyPercent' ? '100' : field === 'daysInYear' ? '366' : undefined} step={field === 'daysInYear' || ['minTenure', 'maxTenure'].includes(field) ? '1' : '0.01'} maxLength={!numeric ? (field === 'productCode' ? 20 : 100) : undefined} inputMode={numeric ? 'decimal' : undefined} autoComplete="off" aria-required="true" aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined} />
+                        <input id={`pm-${field}`} name={field} value={form[field]} onChange={(event) => change(field, event.target.value)} type={numeric ? 'number' : 'text'} min={field === 'daysInYear' ? '360' : numeric ? '0' : undefined} max={field === 'penaltyPercent' ? '100' : field === 'daysInYear' ? '366' : undefined} step={field === 'daysInYear' || ['minTenure', 'maxTenure'].includes(field) ? '1' : '0.01'} maxLength={!numeric ? (field === 'productCode' ? 20 : 100) : undefined} inputMode={numeric ? 'decimal' : undefined} autoComplete="off" aria-required={isRequired} aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined} />
                       )}
                       {errors[field] && <small className="pm-field-error" id={`pm-${field}-error`}>{errors[field]}</small>}
+                      {['minTenure', 'maxTenure'].includes(field) && errors[`${field}Unit`] && <small className="pm-field-error" id={`pm-${field}Unit-error`}>{errors[`${field}Unit`]}</small>}
                     </div>
                   );
                 })}
               </div>
+              {lookupLoading && <div className="pm-status info" role="status">Loading dropdown values from lookups…</div>}
+              {!lookupLoading && lookupError && <div className="pm-status error" role="alert">Unable to load lookup values: {lookupError}</div>}
+              {!lookupLoading && !lookupError && missingLookupLabels.length > 0 && <div className="pm-status info" role="status">No active compatible lookup options are configured for: {missingLookupLabels.join(', ')}. Add the matching lookup types and valid sub-lookups to use these fields. EMI and E.M.I. Type options must match the API values: {supportedEmiValues.join(', ')}.</div>}
               <section className="pm-dop" aria-labelledby="pm-dop-title">
                 <div className="pm-dop-heading">
                   <div><h3 id="pm-dop-title">Delegation of Power for Sanction</h3><p>Set increasing sanction limits and the approving authority for each limit.</p></div>
@@ -435,7 +634,7 @@ export default function ProductManagementPage() {
           <section className="pm-dialog" role="dialog" aria-modal="true" aria-labelledby="pm-view-title">
             <header className="pm-dialog-head"><div><h2 id="pm-view-title">{dialog.product.productName}</h2><p>Product details</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} aria-label="Close product details"><X size={18} /></button></header>
             <div className="pm-view-body">
-              <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || normalizeYesNo(dialog.product.penalty) === 'Yes').map(([field, label]) => {
+              <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || isYesValue(dialog.product.penalty)).map(([field, label]) => {
                 const value = ['penalty', 'emiFixedDate'].includes(field) ? normalizeYesNo(dialog.product[field])
                   : field === 'emi' ? normalizeEmiTiming(dialog.product[field])
                   : field === 'minTenure' ? formatTenure(dialog.product.minTenure, dialog.product.minTenureUnit)
