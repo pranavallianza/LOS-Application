@@ -50,9 +50,9 @@ const wizardSteps = [
   { id: 'address', label: 'Address Details', icon: Home },
   { id: 'employment', label: 'Employment info', icon: Briefcase },
   { id: 'income', label: 'Income Details', icon: Wallet },
-  { id: 'documents', label: 'Documents', icon: FileText },
   { id: 'loan', label: 'Loan History', icon: Landmark },
-  { id: 'references', label: 'Reference', icon: Users }
+  { id: 'references', label: 'Reference', icon: Users },
+  { id: 'documents', label: 'Documents', icon: FileText }
 ];
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -810,7 +810,7 @@ const validateStep = (stepIndex, values) => {
     }
   }
 
-  if (stepIndex === 4) {
+  if (stepIndex === 6) {
     values.documents.forEach((document, index) => {
       if (document.required && !document.file) {
         errors[`documents.${index}.file`] = `${document.name || 'This document'} is required.`;
@@ -836,7 +836,7 @@ const validateStep = (stepIndex, values) => {
     });
   }
 
-  if (stepIndex === 5) {
+  if (stepIndex === 4) {
     values.loanHistory.forEach((loan, index) => {
       const prefix = `loanHistory.${index}.`;
       const hasValues = Object.entries(loan).some(([key, value]) =>
@@ -890,7 +890,7 @@ const validateStep = (stepIndex, values) => {
     });
   }
 
-  if (stepIndex === 6) {
+  if (stepIndex === 5) {
     values.references.forEach((reference, index) => {
       const prefix = `references.${index}.`;
       required(`${prefix}referenceName`, reference.referenceName, 'Reference name is required.');
@@ -2603,8 +2603,8 @@ export default function LoanApplicationPage() {
             </div>
           )}
 
-          {/* Step 5: Document Details */}
-          {currentStep === 4 && (
+          {/* Step 7: Document Details */}
+          {currentStep === 6 && (
             <div className="loan-form-section">
               <div className="loan-data-table-wrap document-table-wrap">
                 <button
@@ -2778,8 +2778,8 @@ export default function LoanApplicationPage() {
             </div>
           )}
 
-          {/* Step 6: Loan History */}
-          {currentStep === 5 && (
+          {/* Step 5: Loan History */}
+          {currentStep === 4 && (
             <div className="loan-form-section">
               <div className="loan-data-table-wrap loan-history-table-wrap">
                 <button
@@ -2956,8 +2956,8 @@ export default function LoanApplicationPage() {
             </div>
           )}
 
-          {/* Step 7: Reference */}
-          {currentStep === 6 && (
+          {/* Step 6: Reference */}
+          {currentStep === 5 && (
             <div className="loan-form-section">
               <p className="reference-instructions">
                 Mandatory to take any two references for future contact purpose.

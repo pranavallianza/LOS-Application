@@ -91,3 +91,56 @@ export async function getBankBranches(signal) {
     throw new Error(getErrorMessage(error));
   }
 }
+
+export async function updateBankBranch(branchId, branch) {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+  }
+  if (branchId === undefined || branchId === null || branchId === "") {
+    throw new Error("Branch ID is required to update a branch.");
+  }
+
+  const storedAuthData = window.localStorage.getItem("authData");
+  if (!storedAuthData) {
+    throw new Error("Your session is unavailable. Please sign in again.");
+  }
+
+  let authData;
+  try {
+    authData = JSON.parse(storedAuthData);
+  } catch {
+    throw new Error("Your session is invalid. Please sign in again.");
+  }
+
+  if (!authData?.accessToken) {
+    throw new Error("Your session has expired. Please sign in again.");
+  }
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/bank-profile/branch/${encodeURIComponent(branchId)}`,
+      {
+        method: "PUT",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authData.accessToken}`,
+        },
+        body: JSON.stringify(branch),
+      },
+    );
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok || result?.success === false) {
+      throw new Error(
+        result?.message ||
+          result?.error ||
+          `Unable to update branch (${response.status}).`,
+      );
+    }
+
+    return result;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
+}

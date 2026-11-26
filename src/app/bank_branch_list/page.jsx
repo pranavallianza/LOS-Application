@@ -6,11 +6,16 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  Pencil,
+  Save,
   Search,
   X,
 } from "lucide-react";
 import AppShell from "../../components/AppShell";
-import { getBankBranches } from "../../services/bank_branch";
+import {
+  getBankBranches,
+  updateBankBranch,
+} from "../../services/bank_branch";
 import "../lookup_management/lookup-management.css";
 import "./branch-list.css";
 
@@ -97,6 +102,19 @@ const detailSections = [
   },
 ];
 
+const editableBranchFields = detailSections
+  .flatMap((section) => section.fields.map(([, key]) => key))
+  .filter((key) => key !== "id");
+
+const branchFieldTypes = {
+  incorporationDate: "date",
+  workingFrom: "time",
+  workingTo: "time",
+  primaryContactNumber: "tel",
+  secondaryContactNumber: "tel",
+  emailId: "email",
+};
+
 function displayValue(value) {
   return value === null || value === undefined || value === ""
     ? "—"
@@ -108,6 +126,10 @@ export default function BankBranchListPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [selectedBranch, setSelectedBranch] = useState(null);
+  const [branchForm, setBranchForm] = useState(null);
+  const [isEditingBranch, setIsEditingBranch] = useState(false);
+  const [isSavingBranch, setIsSavingBranch] = useState(false);
+  const [editError, setEditError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [fallbackMessage, setFallbackMessage] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
@@ -170,43 +192,77 @@ export default function BankBranchListPage() {
     startIndex + PAGE_SIZE,
   );
 
+  function startEditingBranch() {
+    setBranchForm(
+      Object.fromEntries(
+        editableBranchFields.map((key) => [
+          key,
+          selectedBranch[key] ?? "",
+        ]),
+      ),
+    );
+    setEditError("");
+    setIsEditingBranch(true);
+  }
+
+  async function saveBranchChanges() {
+    setIsSavingBranch(true);
+    setEditError("");
+
+    const branchPayload = Object.fromEntries(
+      editableBranchFields.map((key) => [key, branchForm[key]]),
+    );
+
+    try {
+      const result = await updateBankBranch(selectedBranch.id, branchPayload);
+      const savedBranch =
+        result?.data &&
+        typeof result.data === "object" &&
+        !Array.isArray(result.data)
+          ? result.data
+          : branchPayload;
+      const updatedBranch = { ...selectedBranch, ...savedBranch };
+
+      setSelectedBranch(updatedBranch);
+      setBranches((currentBranches) =>
+        currentBranches.map((branch) =>
+          String(branch.id) === String(selectedBranch.id)
+            ? updatedBranch
+            : branch,
+        ),
+      );
+      setBranchForm(null);
+      setIsEditingBranch(false);
+    } catch (error) {
+      setEditError(
+        error instanceof Error ? error.message : "Unable to update branch.",
+      );
+    } finally {
+      setIsSavingBranch(false);
+    }
+  }
+
   return (
     <AppShell>
       <main className="lookup-page branch-list-page">
         <header className="lookup-heading">
-          <div>
-            <p className="lookup-eyebrow">BANK PROFILE</p>
-            <h1>Bank Branches</h1>
-            <p className="lookup-subtitle">
-              Browse registered bank branches and their details.
-            </p>
-          </div>
+          <h1>Branch list</h1>
           <div className="lookup-summary">
             <Building2 size={17} aria-hidden="true" />
             <span>
-              <strong>{branches.length}</strong> branches
+              <strong>{branches.length}</strong>{" "}
+              {branches.length === 1 ? "branch" : "branches"}
             </span>
           </div>
         </header>
 
         <section className="lookup-list-section">
-          <div className="lookup-list-heading">
-            <div>
-              <h2>Branch list</h2>
-              <p>View branch registration, address, and contact information.</p>
-            </div>
-            <span className="lookup-count">
-              {isLoading
-                ? "Loading"
-                : `${filteredBranches.length} ${filteredBranches.length === 1 ? "record" : "records"}`}
-            </span>
-          </div>
-
           <div className="lookup-toolbar">
-            <label className="lookup-search" htmlFor="branch-search">
+            <div className="lookup-search">
               <Search size={17} aria-hidden="true" />
               <input
                 id="branch-search"
+                aria-label="Search branches"
                 value={search}
                 onChange={(event) => {
                   setSearch(event.target.value);
@@ -214,7 +270,21 @@ export default function BankBranchListPage() {
                 }}
                 placeholder="Search code, branch, bank, or location"
               />
-            </label>
+              {search && (
+                <button
+                  type="button"
+                  className="branch-search-clear"
+                  onClick={() => {
+                    setSearch("");
+                    setPage(1);
+                  }}
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <X size={16} aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </div>
 
           {fallbackMessage && (
@@ -275,7 +345,12 @@ export default function BankBranchListPage() {
                           <button
                             className="lookup-icon-action with-label"
                             type="button"
-                            onClick={() => setSelectedBranch(branch)}
+                            onClick={() => {
+                              setSelectedBranch(branch);
+                              setBranchForm(null);
+                              setIsEditingBranch(false);
+                              setEditError("");
+                            }}
                             aria-label={`View ${branch.branchName || `branch ${branch.id}`}`}
                             title="View branch details"
                           >
@@ -361,7 +436,9 @@ export default function BankBranchListPage() {
       {selectedBranch && (
         <div
           className="branch-detail-backdrop"
-          onMouseDown={() => setSelectedBranch(null)}
+          onMouseDown={() => {
+            if (!isSavingBranch) setSelectedBranch(null);
+          }}
         >
           <section
             className="branch-detail-dialog"
@@ -384,12 +461,18 @@ export default function BankBranchListPage() {
                 type="button"
                 className="branch-detail-close"
                 onClick={() => setSelectedBranch(null)}
+                disabled={isSavingBranch}
                 aria-label="Close branch details"
               >
                 <X size={18} aria-hidden="true" />
               </button>
             </header>
             <div className="branch-detail-content">
+              {editError && (
+                <p className="branch-edit-error" role="alert">
+                  {editError}
+                </p>
+              )}
               {detailSections.map((section) => (
                 <section className="branch-detail-section" key={section.title}>
                   <h3>{section.title}</h3>
@@ -397,7 +480,24 @@ export default function BankBranchListPage() {
                     {section.fields.map(([label, key]) => (
                       <div className="branch-detail-field" key={key}>
                         <dt>{label}</dt>
-                        <dd>{displayValue(selectedBranch[key])}</dd>
+                        <dd>
+                          {isEditingBranch && key !== "id" ? (
+                            <input
+                              className="branch-detail-input"
+                              type={branchFieldTypes[key] || "text"}
+                              aria-label={label}
+                              value={branchForm?.[key] ?? ""}
+                              onChange={(event) =>
+                                setBranchForm((currentForm) => ({
+                                  ...currentForm,
+                                  [key]: event.target.value,
+                                }))
+                              }
+                            />
+                          ) : (
+                            displayValue(selectedBranch[key])
+                          )}
+                        </dd>
                       </div>
                     ))}
                   </dl>
@@ -405,13 +505,49 @@ export default function BankBranchListPage() {
               ))}
             </div>
             <footer className="branch-detail-footer">
-              <button
-                type="button"
-                className="lookup-button secondary"
-                onClick={() => setSelectedBranch(null)}
-              >
-                Close
-              </button>
+              {isEditingBranch ? (
+                <>
+                  <button
+                    type="button"
+                    className="lookup-button secondary"
+                    onClick={() => {
+                      setBranchForm(null);
+                      setIsEditingBranch(false);
+                      setEditError("");
+                    }}
+                    disabled={isSavingBranch}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="lookup-button primary"
+                    onClick={saveBranchChanges}
+                    disabled={isSavingBranch}
+                  >
+                    <Save size={14} aria-hidden="true" />
+                    {isSavingBranch ? "Saving..." : "Save"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="lookup-button primary branch-edit-button"
+                    onClick={startEditingBranch}
+                  >
+                    <Pencil size={14} aria-hidden="true" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="lookup-button secondary"
+                    onClick={() => setSelectedBranch(null)}
+                  >
+                    Close
+                  </button>
+                </>
+              )}
             </footer>
           </section>
         </div>

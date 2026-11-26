@@ -4,7 +4,44 @@
 }
 
 .branch-list-page .lookup-list-section {
-  padding-top: 20px;
+  padding-top: 0;
+}
+
+.branch-list-page .lookup-toolbar {
+  border-top: 0;
+}
+
+.branch-list-page .lookup-search {
+  height: 42px;
+  border-color: #d7e5e7;
+  border-radius: 9px;
+}
+
+.branch-list-page .lookup-search:focus-within {
+  border-color: var(--lookup-focus);
+  box-shadow: none;
+}
+
+.branch-list-page .lookup-search input:focus-visible {
+  outline: 0;
+}
+
+.branch-search-clear {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #8997a6;
+  cursor: pointer;
+}
+
+.branch-search-clear:hover {
+  background: #edf5f3;
+  color: var(--lookup-accent-strong);
 }
 
 .branch-fallback-notice {
@@ -31,6 +68,16 @@
 
 .branch-table {
   min-width: 760px;
+}
+
+.branch-table th:first-child,
+.branch-table td:first-child {
+  padding-left: 24px;
+}
+
+.branch-table th:last-child,
+.branch-table td:last-child {
+  padding-right: 24px;
 }
 
 .branch-table .actions-column {
@@ -160,12 +207,45 @@
   font-weight: 600;
 }
 
+.branch-detail-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid #65a99e;
+  border-radius: 0;
+  background: transparent;
+  padding: 3px 0 5px;
+  color: var(--lookup-ink);
+  font: inherit;
+  font-weight: 600;
+}
+
+.branch-detail-input:focus {
+  border-bottom-color: var(--lookup-accent-strong);
+  outline: 0;
+}
+
+.branch-edit-error {
+  margin: 12px 0 0;
+  color: #b42318;
+  font-size: 11px;
+}
+
 .branch-detail-footer {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
   border-top: 1px solid var(--lookup-line);
   background: var(--lookup-soft);
   padding: 12px 23px;
+}
+
+.branch-detail-footer .branch-edit-button {
+  background: #247b74;
+}
+
+.branch-detail-footer .branch-edit-button:hover {
+  background: #176760;
 }
 
 @media (max-width: 600px) {
