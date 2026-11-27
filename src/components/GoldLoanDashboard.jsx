@@ -32,6 +32,23 @@ import {
 
 const PAGE_SIZE = 10;
 
+const formatApplicationIdDisplay = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Not available';
+
+  if (/^GL-/i.test(raw)) {
+    const parts = raw.split('-').filter(Boolean);
+    if (parts.length >= 3) {
+      const [prefix, maybeTs, ...rest] = parts;
+      if (/^\d{10,}$/.test(maybeTs)) {
+        return `${prefix}-${rest.join('-') || maybeTs}`;
+      }
+    }
+  }
+
+  return raw;
+};
+
 function getApplicationRecords() {
   const savedApplications = readSavedGoldLoanApplications();
   const savedById = new Map(
@@ -262,7 +279,7 @@ export default function GoldLoanDashboard() {
                       return (
                         <tr key={id}>
                           <td>{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
-                          <td><strong className="application-id">{id}</strong></td>
+                          <td><strong className="application-id">{formatApplicationIdDisplay(id)}</strong></td>
                           <td>{getCustomerName(application)}</td>
                           <td>{application.customerId || application.goldLoanForm?.customerId || 'Not available'}</td>
                           <td>{application.goldLoanForm?.loanAccountNumber || 'Not available'}</td>
@@ -280,7 +297,7 @@ export default function GoldLoanDashboard() {
                                 className="application-action-button"
                                 type="button"
                                 onClick={() => router.push(`/gold_loan_application/view/${encodeURIComponent(id)}`)}
-                                aria-label={`View Gold Loan application ${id}`}
+                                aria-label={`View Gold Loan application ${formatApplicationIdDisplay(id)}`}
                                 title="View application"
                               >
                                 <Eye size={16} aria-hidden="true" />
@@ -289,7 +306,7 @@ export default function GoldLoanDashboard() {
                                 className="application-action-button"
                                 type="button"
                                 onClick={() => router.push(`/gold_loan_application/edit/${encodeURIComponent(id)}`)}
-                                aria-label={`Edit Gold Loan application ${id}`}
+                                aria-label={`Edit Gold Loan application ${formatApplicationIdDisplay(id)}`}
                                 title="Edit application"
                               >
                                 <Pencil size={15} aria-hidden="true" />
@@ -304,14 +321,8 @@ export default function GoldLoanDashboard() {
               </div>
 
               <div className="loan-pagination" aria-label="Gold Loan application pagination">
-                <span>
-                  Showing {(currentPage - 1) * PAGE_SIZE + 1}
-                  {' - '}
-                  {Math.min(currentPage * PAGE_SIZE, filteredApplications.length)}
-                  {' of '}
-                  {filteredApplications.length}
-                </span>
-                <div>
+                <div className="loan-pagination-controls">
+                  <span className="loan-page-indicator" aria-live="polite">Page {currentPage} of {pageCount}</span>
                   <button
                     className="secondary-button"
                     type="button"
@@ -322,7 +333,6 @@ export default function GoldLoanDashboard() {
                     <ChevronLeft size={15} aria-hidden="true" />
                     Previous
                   </button>
-                  <span aria-live="polite">Page {currentPage} of {pageCount}</span>
                   <button
                     className="secondary-button"
                     type="button"
@@ -347,42 +357,190 @@ export default function GoldLoanDashboard() {
       </div>
       <LoanDashboardStyles />
       <style jsx>{`
+        .loan-dashboard {
+          min-width: 0;
+          font-size: 12px;
+        }
+
+        .loan-dashboard :global(.page-header) {
+          margin-top: 0;
+          margin-bottom: 12px;
+          padding-top: 0;
+        }
+
+        .loan-dashboard :global(.page-header h1) {
+          margin: 0;
+          font-size: 24px;
+          line-height: 1.2;
+        }
+
+        .loan-dashboard :global(.loan-metrics) {
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+
+        .loan-dashboard :global(.loan-metric-card.card) {
+          display: grid;
+          grid-template-columns: 36px minmax(0, 1fr);
+          align-items: center;
+          gap: 10px;
+          min-height: 72px;
+          padding: 12px 14px;
+          border-radius: 10px;
+        }
+
+        .loan-dashboard :global(.loan-metric-icon) {
+          width: 36px;
+          height: 36px;
+          border-radius: 9px;
+        }
+
+        .loan-dashboard :global(.loan-metric-card p) {
+          margin: 0 0 2px;
+          font-size: 11px;
+          line-height: 1.25;
+        }
+
+        .loan-dashboard :global(.loan-metric-card strong) {
+          font-size: 20px;
+          line-height: 1.1;
+        }
+
+        .loan-dashboard :global(.loan-table-card.card) {
+          padding: 14px;
+          border-radius: 10px;
+        }
+
+        .loan-dashboard :global(.loan-table-heading) {
+          margin-bottom: 10px;
+          gap: 10px;
+        }
+
+        .loan-dashboard :global(.loan-table-heading h2) {
+          margin: 0;
+          font-size: 15px;
+        }
+
+        .loan-dashboard :global(.sample-data-label),
+        .loan-dashboard :global(.data-note),
+        .loan-dashboard :global(.loan-table-message) {
+          font-size: 11px;
+        }
+
+        .loan-dashboard :global(.loan-search-row) {
+          gap: 8px;
+          margin-bottom: 10px;
+        }
+
+        .loan-dashboard :global(.loan-search) {
+          min-height: 36px;
+          padding: 0 10px;
+          gap: 8px;
+        }
+
+        .loan-dashboard :global(.loan-search input) {
+          height: 34px;
+          font-size: 12px;
+        }
+
+        .loan-dashboard :global(.loan-search-button) {
+          min-height: 36px;
+          padding: 0 12px;
+          font-size: 12px;
+        }
+
+        .loan-dashboard :global(.loan-table-scroll) {
+          overflow-x: auto;
+        }
+
+        .loan-dashboard :global(.loan-applications-table) {
+          width: 100%;
+          min-width: 980px;
+          border-collapse: separate;
+          border-spacing: 0;
+        }
+
+        .loan-dashboard :global(.loan-applications-table th) {
+          padding: 9px 8px;
+          font-size: 11px;
+          font-weight: 700;
+          text-align: center;
+          vertical-align: middle;
+          line-height: 1.3;
+          white-space: nowrap;
+        }
+
+        .loan-dashboard :global(.loan-applications-table td) {
+          padding: 9px 8px;
+          font-size: 11.5px;
+          text-align: center;
+          vertical-align: middle;
+          line-height: 1.35;
+        }
+
+        .loan-dashboard :global(.loan-applications-table .loan-amount) {
+          text-align: center;
+        }
+
+        .loan-dashboard :global(.application-actions) {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+        }
+
+        .loan-dashboard :global(.application-action-button) {
+          width: 28px;
+          height: 28px;
+        }
+
         .loan-pagination {
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          justify-content: flex-end;
           gap: 12px;
-          padding: 14px 0 0;
+          padding: 12px 0 0;
           color: #718185;
           font-size: 11px;
         }
 
-        .loan-pagination > div {
+        .loan-pagination-controls {
           display: flex;
           align-items: center;
           gap: 10px;
+          margin-left: auto;
+        }
+
+        .loan-page-indicator {
+          font-weight: 600;
+          color: #5f7075;
+          white-space: nowrap;
         }
 
         .loan-pagination button {
           display: inline-flex;
           align-items: center;
           gap: 5px;
+          min-height: 32px;
+          padding: 0 10px;
+          font-size: 11px;
         }
 
         .loan-pagination button:disabled {
           cursor: not-allowed;
-          opacity: .5;
+          opacity: 0.5;
         }
 
         @media (max-width: 640px) {
           .loan-pagination {
-            align-items: flex-start;
-            flex-direction: column;
+            justify-content: flex-start;
           }
 
-          .loan-pagination > div {
+          .loan-pagination-controls {
             width: 100%;
             justify-content: space-between;
+            margin-left: 0;
+            flex-wrap: wrap;
           }
         }
       `}</style>

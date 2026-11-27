@@ -28,63 +28,11 @@ import Card from '../../components/Card';
 import { PermissionGate } from '../../components/AccessControl';
 import { api } from '../../services/api.js';
 import { getLeads } from '../../services/localLeads';
-import { getUsers } from '../../services/leadService';
+import { getUsers, normalizeUserRecord } from '../../services/user_management';
 
 const USERS_PER_PAGE = 5;
 
-function getEnabledFlag(...values) {
-  const value = values.find((candidate) => candidate !== undefined && candidate !== null);
-  return value === true || ['Y', 'YES', 'TRUE', '1'].includes(String(value).toUpperCase());
-}
-
-function normalizeUserRecord(user) {
-  const name = user.name
-    || user.fullName
-    || [user.firstName, user.middleName, user.lastName].filter(Boolean).join(' ');
-  const nameParts = String(name || '').trim().split(/\s+/).filter(Boolean);
-  const status = String(user.status || '');
-  const normalizedStatus = {
-    OPERATIVE: 'Active',
-    INOPERATIVE: 'Inactive',
-    SUSPENDED: 'Suspended',
-  }[status.toUpperCase()] || status;
-
-  return {
-    ...user,
-    id: user.id || user.userId || user.userCode || user.empNo,
-    empNo: user.empNo || user.emp_no || user.employeeId || user.employee_id,
-    employeeId: user.employeeId || user.employee_id || user.empNo || user.emp_no,
-    name,
-    fullName: name,
-    firstName: user.firstName || nameParts[0] || '',
-    middleName: user.middleName || (nameParts.length > 2 ? nameParts.slice(1, -1).join(' ') : ''),
-    lastName: user.lastName || (nameParts.length > 1 ? nameParts.slice(1).join(' ') : ''),
-    title: user.title || ({
-      MALE: 'Mr.',
-      FEMALE: 'Ms.',
-    }[String(user.gender || '').toUpperCase()] || ''),
-    userName: user.userName || user.username,
-    mobile: user.mobile || user.mobileNumber || user.phoneNumber,
-    dateOfBirth: user.dateOfBirth || user.dob || '',
-    email: user.email || user.emailAddress || '',
-    allow2FA: getEnabledFlag(user.allow2FA, user.twoFaEnabled, user.twoFAEnabled),
-    twoFAEnabled: getEnabledFlag(user.allow2FA, user.twoFaEnabled, user.twoFAEnabled) ? 'Y' : 'N',
-    allowMultiBranch: getEnabledFlag(user.allowMultiBranch, user.multiBranchAccess),
-    multiBranchAccess: getEnabledFlag(user.allowMultiBranch, user.multiBranchAccess) ? 'Y' : 'N',
-    allowLoginOnHolidays: getEnabledFlag(user.allowLoginOnHolidays, user.loginOnHolidays),
-    loginOnHolidays: getEnabledFlag(user.allowLoginOnHolidays, user.loginOnHolidays) ? 'Y' : 'N',
-    branch: user.branch || user.branchName || user.loginBranch || user.login_branch_name,
-    loginBranch: user.loginBranch || user.branch || user.branchName || user.login_branch_name,
-    designation: user.designation || user.jobTitle || user.position,
-    userRole: user.userRole || user.role,
-    systemRole: user.systemRole || user.system_role || 'SUPER_ADMIN',
-    sessionTimeout: user.sessionTimeout ?? user.idleTimeout ?? user.inactiveSessionTimeout ?? 900,
-    idleTimeout: user.idleTimeout ?? user.sessionTimeout ?? user.inactiveSessionTimeout ?? 900,
-    inactiveSessionTimeout: user.inactiveSessionTimeout ?? user.sessionTimeout ?? user.idleTimeout ?? 900,
-    badLogins: user.badLogins ?? 3,
-    status: normalizedStatus,
-  };
-}
+// normalizeUserRecord is provided by ../../services/user_management
 
 export default function UserManagementPage() {
 

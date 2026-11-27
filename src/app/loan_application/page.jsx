@@ -155,6 +155,10 @@ export default function LoanDashboardPage() {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
+  const formatApplicationIdDisplay = (value) => {
+    const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+    return text || 'Not available';
+  };
 
   const metrics = [
     {
@@ -305,6 +309,7 @@ export default function LoanDashboardPage() {
     if (applicationRoute.mode === 'view') {
       return (
         <RetailLoanApplicationView
+          key={applicationRoute.id}
           application={application}
           onBack={returnToLoanDashboard}
         />
@@ -442,73 +447,70 @@ export default function LoanDashboardPage() {
                 </thead>
                 <tbody>
                   {pageRows.map(
-                    ({ application, sourceIndex, id, customerName, category, loanType }, index) => (
-                      <tr key={`${id}-${index}`}>
-                        <td>{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
-                        <td>
-                          <strong className="application-id">{id}</strong>
-                        </td>
-                        <td>{customerName}</td>
-                        <td>{category}</td>
-                        <td>{loanType}</td>
-                        <td className="loan-amount">
-                          {formatAmount(application.amount)}
-                        </td>
-                        <td>
-                          {formatApplicationDate(
-                            application.applicationDate ||
-                              application.createdAt ||
-                              application.date,
-                          )}
-                        </td>
-                        <td>
-                          <span
-                            className={`loan-status ${getStatusClass(
-                              application.status,
-                            )}`}
-                          >
-                            {getStatusLabel(application.status)}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="application-actions">
-                            <button
-                              className="application-action-button"
-                              type="button"
-                              onClick={() => openApplication(application, sourceIndex, 'view')}
-                              aria-label={`View application ${id}`}
-                              title="View application"
+                    ({ application, sourceIndex, id, customerName, category, loanType }, index) => {
+                      const displayId = formatApplicationIdDisplay(id);
+                      return (
+                        <tr key={`${id}-${index}`}>
+                          <td>{(currentPage - 1) * PAGE_SIZE + index + 1}</td>
+                          <td>
+                            <strong className="application-id">{displayId}</strong>
+                          </td>
+                          <td>{customerName}</td>
+                          <td>{category}</td>
+                          <td>{loanType}</td>
+                          <td className="loan-amount">
+                            {formatAmount(application.amount)}
+                          </td>
+                          <td>
+                            {formatApplicationDate(
+                              application.applicationDate ||
+                                application.createdAt ||
+                                application.date,
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={`loan-status ${getStatusClass(
+                                application.status,
+                              )}`}
                             >
-                              <Eye size={16} aria-hidden="true" />
-                            </button>
-                            <button
-                              className="application-action-button"
-                              type="button"
-                              onClick={() => openApplication(application, sourceIndex, 'edit')}
-                              aria-label={`Edit application ${id}`}
-                              title="Edit application"
-                            >
-                              <Pencil size={15} aria-hidden="true" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ),
+                              {getStatusLabel(application.status)}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="application-actions">
+                              <button
+                                className="application-action-button"
+                                type="button"
+                                onClick={() => openApplication(application, sourceIndex, 'view')}
+                                aria-label={`View application ${displayId}`}
+                                title="View application"
+                              >
+                                <Eye size={16} aria-hidden="true" />
+                              </button>
+                              <button
+                                className="application-action-button"
+                                type="button"
+                                onClick={() => openApplication(application, sourceIndex, 'edit')}
+                                aria-label={`Edit application ${displayId}`}
+                                title="Edit application"
+                              >
+                                <Pencil size={15} aria-hidden="true" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    },
                   )}
                 </tbody>
               </table>
             </div>
             <div className="loan-pagination" aria-label="Retail Loan application pagination">
-              <span>
-                Showing {(currentPage - 1) * PAGE_SIZE + 1}
-                {' - '}
-                {Math.min(currentPage * PAGE_SIZE, filteredRows.length)}
-                {' of '}
-                {filteredRows.length}
-              </span>
-              <div>
+              <div className="loan-pagination-controls">
+                <span className="loan-pagination-page" aria-live="polite">Page {currentPage} of {pageCount}</span>
                 <button
-                  className="secondary-button"
+                  className="secondary-button loan-pagination-btn"
                   type="button"
                   onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                   disabled={currentPage === 1}
@@ -517,9 +519,8 @@ export default function LoanDashboardPage() {
                   <ChevronLeft size={15} aria-hidden="true" />
                   Previous
                 </button>
-                <span aria-live="polite">Page {currentPage} of {pageCount}</span>
                 <button
-                  className="secondary-button"
+                  className="secondary-button loan-pagination-btn"
                   type="button"
                   onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
                   disabled={currentPage === pageCount}
@@ -642,6 +643,19 @@ export default function LoanDashboardPage() {
         <style jsx>{`
           .loan-dashboard {
             min-width: 0;
+            font-size: 12px;
+          }
+
+          .loan-dashboard :global(.page-header) {
+            margin-top: 0;
+            margin-bottom: 12px;
+            padding-top: 0;
+          }
+
+          .loan-dashboard :global(.page-header h1) {
+            margin: 0;
+            font-size: 24px;
+            line-height: 1.2;
           }
 
           :global(.apply-button) {
@@ -666,25 +680,26 @@ export default function LoanDashboardPage() {
           .loan-metrics {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 15px;
-            margin-bottom: 19px;
+            gap: 12px;
+            margin-bottom: 16px;
           }
 
           .loan-metrics :global(.loan-metric-card) {
-            min-height: 126px;
+            min-height: 88px;
+            height: 100%;
             display: flex;
             align-items: center;
-            gap: 15px;
-            padding: 20px;
+            gap: 12px;
+            padding: 14px 16px;
           }
 
           .loan-metric-icon {
-            width: 42px;
-            height: 42px;
+            width: 36px;
+            height: 36px;
             display: grid;
             flex: 0 0 auto;
             place-items: center;
-            border-radius: 9px;
+            border-radius: 8px;
           }
 
           .loan-metric-icon.teal {
@@ -703,14 +718,15 @@ export default function LoanDashboardPage() {
           }
 
           .loan-metrics :global(.loan-metric-card p) {
-            margin: 0 0 6px;
+            margin: 0 0 4px;
             color: #718185;
-            font-size: 12px;
+            font-size: 11px;
+            line-height: 1.3;
           }
 
           .loan-metrics :global(.loan-metric-card strong) {
             color: #1e3f45;
-            font: 700 27px Manrope, sans-serif;
+            font: 700 22px Manrope, sans-serif;
             line-height: 1.1;
           }
 
@@ -722,20 +738,20 @@ export default function LoanDashboardPage() {
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 19px;
+            gap: 12px;
+            margin-bottom: 14px;
           }
 
           .loan-table-heading h2 {
             margin: 0;
             color: #23474c;
-            font: 700 16px Manrope, sans-serif;
+            font: 700 14px Manrope, sans-serif;
           }
 
           .loan-table-heading p {
-            margin: 6px 0 0;
+            margin: 4px 0 0;
             color: #91a0a3;
-            font-size: 11px;
+            font-size: 10px;
           }
 
           .sample-data-label {
@@ -750,12 +766,12 @@ export default function LoanDashboardPage() {
           }
 
           .loan-search {
-            min-height: 40px;
+            min-height: 36px;
             display: flex;
             align-items: center;
-            gap: 9px;
-            margin-bottom: 17px;
-            padding: 0 12px;
+            gap: 8px;
+            margin-bottom: 14px;
+            padding: 0 10px;
             border: 1px solid #dfe8e8;
             border-radius: 6px;
             color: #849497;
@@ -765,8 +781,8 @@ export default function LoanDashboardPage() {
           .loan-search-row {
             display: flex;
             align-items: stretch;
-            gap: 10px;
-            margin-bottom: 17px;
+            gap: 8px;
+            margin-bottom: 14px;
           }
 
           .loan-search-row .loan-search {
@@ -780,8 +796,9 @@ export default function LoanDashboardPage() {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 7px;
-            min-height: 40px;
+            gap: 6px;
+            min-height: 36px;
+            font-size: 11px;
           }
 
           .loan-search:focus-within {
@@ -792,13 +809,13 @@ export default function LoanDashboardPage() {
           .loan-search input {
             width: 100%;
             min-width: 0;
-            height: 38px;
+            height: 34px;
             padding: 0;
             border: 0;
             outline: 0;
             color: #33474c;
             background: transparent;
-            font-size: 12px;
+            font-size: 11px;
           }
 
           .loan-search input::placeholder {
@@ -815,24 +832,30 @@ export default function LoanDashboardPage() {
             width: 100%;
             min-width: 980px;
             border-collapse: collapse;
-            text-align: left;
+            text-align: center;
             color: #617377;
-            font-size: 11px;
+            font-size: 10px;
           }
 
           .loan-applications-table th {
-            padding: 12px;
+            padding: 10px 8px;
             border-top: 0;
             white-space: nowrap;
+            text-align: center;
+            font-weight: 700;
+            color: #34565b;
           }
 
           .loan-applications-table td {
-            padding: 13px 12px;
+            padding: 10px 8px;
             white-space: nowrap;
+            text-align: center;
+            vertical-align: middle;
           }
 
           .application-id {
             color: #267a7a;
+            font-weight: 700;
           }
 
           .loan-amount {
@@ -843,7 +866,8 @@ export default function LoanDashboardPage() {
           .loan-status {
             display: inline-flex;
             align-items: center;
-            padding: 5px 8px;
+            justify-content: center;
+            padding: 4px 8px;
             border-radius: 20px;
             color: #617377;
             background: #eef2f2;
@@ -872,6 +896,43 @@ export default function LoanDashboardPage() {
           .loan-status.rejected {
             color: #a95757;
             background: #faeaea;
+          }
+
+          .loan-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 12px 0 0;
+            color: #718185;
+            font-size: 11px;
+          }
+
+          .loan-pagination-controls {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+          }
+
+          .loan-pagination-page {
+            white-space: nowrap;
+            color: #617377;
+            font-weight: 600;
+          }
+
+          .loan-pagination-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            min-height: 32px;
+            padding: 0 10px;
+            font-size: 11px;
+          }
+
+          .loan-pagination button:disabled {
+            cursor: not-allowed;
+            opacity: .5;
           }
 
           .no-action {
@@ -945,29 +1006,6 @@ export default function LoanDashboardPage() {
             justify-content: flex-end;
             gap: 10px;
             margin-top: 4px;
-          }
-
-          .application-actions {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-          }
-
-          .application-action-button {
-            width: 30px;
-            height: 30px;
-            display: inline-grid;
-            place-items: center;
-            border: 1px solid #dfe8e8;
-            border-radius: 6px;
-            color: #267a7a;
-            background: #fff;
-          }
-
-          .application-action-button:hover {
-            border-color: #8bbab4;
-            color: #165f5c;
-            background: #edf6f4;
           }
 
           .category-overlay {
