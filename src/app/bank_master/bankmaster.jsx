@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Building2,
   Check,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import AppShell from '../../components/AppShell';
 import PageHeader from '../../components/PageHeader';
+import { getLookupOptions, getLookupTypes } from '../../services/lookups';
 
 const steps = [
   { id: 'bank', label: 'Bank Info', icon: Building2 },
@@ -23,6 +24,13 @@ const steps = [
 ];
 
 const emptyAccount = () => ({ particulars: '', bankName: '', accountType: '', accountNumber: '', micrCode: '', ifscCode: '' });
+const bankMasterLookups = [
+  { field: 'addressType', label: 'Address Type' },
+  { field: 'particulars', label: 'Particulars' },
+  { field: 'accountType', label: 'Account Type' },
+  { field: 'approvalAuthority', label: 'Loan Approval Authority' }
+];
+const normalizeLookupName = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const validateAccount = (account, prefix = 'account-draft-') => {
   const errors = {};
   for (const [key, label] of [['bankName', 'Bank name'], ['accountType', 'Account type'], ['accountNumber', 'Account number'], ['micrCode', 'MICR code'], ['ifscCode', 'IFSC code']]) {
@@ -39,7 +47,8 @@ const validateAccount = (account, prefix = 'account-draft-') => {
 };
 const emptyForm = () => ({
   bankCode: '', bankName: '', bankType: '', licenseNumber: '', pan: '', gstNumber: '', branchCount: '',
-  addressType: '', pincode: '', address: '', addressLine2: '', landmark: '', city: '', state: '',
+  addressType: '', pincode: '', address1: '', addressLine2: '', landmark: '', city: '', state: '',
+  contactNumber: '', emailId: '',
   accounts: [], approvalAuthority: '',
   singlePartyLimit: '', groupExposureLimit: '', sanctionMargin: '', penaltyCharge: '', penaltyRate: ''
 });
@@ -78,6 +87,18 @@ function validateStep(stepIndex, values) {
     }
   }
 
+  if (stepIndex === 1) {
+    if (values.pincode.trim() && !/^\d{6}$/.test(values.pincode.trim())) {
+      add('pincode', 'PIN code must contain 6 digits.');
+    }
+    if (values.contactNumber.trim() && !/^\d{10}$/.test(values.contactNumber.trim())) {
+      add('contactNumber', 'Contact number must contain 10 digits.');
+    }
+    if (values.emailId.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.emailId.trim())) {
+      add('emailId', 'Enter a valid email address.');
+    }
+  }
+
   if (stepIndex === 2) {
     values.accounts.forEach((account, index) => {
       Object.assign(errors, validateAccount(account, `account-${index}-`));
@@ -98,10 +119,10 @@ function validateStep(stepIndex, values) {
   return errors;
 }
 
-function TextField({ label, field, value, onChange, error, hint, required = false, type = 'text', ...props }) {
+function TextField({ label, field, value, onChange, error, hint, required = false, type = 'text', className = '', ...props }) {
   const errorId = `bank-master-${field}-error`;
   return (
-    <label className="bank-master-field">
+    <label className={`bank-master-field ${className}`.trim()}>
       <span>{label}{required && <em aria-hidden="true"> *</em>}</span>
       <input
         id={`bank-master-${field}`}
@@ -120,6 +141,32 @@ function TextField({ label, field, value, onChange, error, hint, required = fals
   );
 }
 
+function LookupSelectField({ label, field, value, options, onChange, error, loading, required = false }) {
+  const errorId = `bank-master-${field}-error`;
+  return (
+    <label className="bank-master-field">
+      <span>{label}{required && <em aria-hidden="true"> *</em>}</span>
+      <select
+        id={`bank-master-${field}`}
+        name={field}
+        value={value}
+        onChange={onChange}
+        required={required}
+        aria-required={required}
+        disabled={loading || options.length === 0}
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? errorId : undefined}
+      >
+        <option value="">{loading ? 'Loading options…' : `Select ${label}`}</option>
+        {options.map((option) => (
+          <option key={option.id} value={option.name}>{option.name}</option>
+        ))}
+      </select>
+      {error && <small className="bank-master-field-error" id={errorId}>{error}</small>}
+    </label>
+  );
+}
+
 export default function BankMaster() {
   const [form, setForm] = useState(emptyForm);
   const [originalForm, setOriginalForm] = useState(emptyForm);
@@ -127,7 +174,57 @@ export default function BankMaster() {
   const [errors, setErrors] = useState({});
   const [accountDraft, setAccountDraft] = useState(emptyAccount);
   const [editingAccountIndex, setEditingAccountIndex] = useState(null);
+  const [accountEntryOpen, setAccountEntryOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [lookupOptions, setLookupOptions] = useState({});
+  const [lookupsLoading, setLookupsLoading] = useState(true);
+  const [lookupError, setLookupError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadBankMasterLookups() {
+      setLookupsLoading(true);
+      setLookupError('');
+      try {
+        const lookupTypes = (await getLookupTypes(controller.signal))
+          .filter((lookup) => lookup.status === 'Active');
+        const entries = await Promise.all(bankMasterLookups.map(async ({ field, label }) => {
+          const lookup = lookupTypes.find(
+            (item) => normalizeLookupName(item.name) === normalizeLookupName(label)
+          );
+          if (!lookup?.code) {
+            throw new Error(`No active lookup type found for ${label}.`);
+          }
+
+          const options = (await getLookupOptions(lookup.code, controller.signal))
+            .filter((option) => option.status === 'Active' && (option.name || option.code))
+            .sort((first, second) => first.displayOrder - second.displayOrder)
+            .map((option) => ({
+              id: option.id,
+              name: option.name || option.code
+            }));
+          if (!options.length) {
+            throw new Error(`The active ${label} lookup has no options.`);
+          }
+          return [field, options];
+        }));
+
+        if (!controller.signal.aborted) {
+          setLookupOptions(Object.fromEntries(entries));
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLookupError(error instanceof Error ? error.message : 'Unable to load Bank Master lookup options.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setLookupsLoading(false);
+      }
+    }
+
+    loadBankMasterLookups();
+    return () => controller.abort();
+  }, []);
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -166,6 +263,7 @@ export default function BankMaster() {
     }));
     setAccountDraft(emptyAccount());
     setEditingAccountIndex(null);
+    setAccountEntryOpen(false);
     setErrors({});
     setNotice('');
   }
@@ -173,6 +271,15 @@ export default function BankMaster() {
   function editAccount(index) {
     setAccountDraft({ ...form.accounts[index] });
     setEditingAccountIndex(index);
+    setAccountEntryOpen(true);
+    setErrors({});
+    setNotice('');
+  }
+
+  function closeAccountEntry() {
+    setAccountDraft(emptyAccount());
+    setEditingAccountIndex(null);
+    setAccountEntryOpen(false);
     setErrors({});
     setNotice('');
   }
@@ -230,6 +337,7 @@ export default function BankMaster() {
     if (originalForm) setForm({ ...originalForm, accounts: originalForm.accounts.map((account) => ({ ...account })) });
     setAccountDraft(emptyAccount());
     setEditingAccountIndex(null);
+    setAccountEntryOpen(false);
     setErrors({});
     setActiveStep(0);
     setNotice('Draft changes discarded.');
@@ -241,13 +349,22 @@ export default function BankMaster() {
     setErrors(allErrors);
     const firstInvalidField = Object.keys(allErrors)[0];
     if (firstInvalidField) {
-      const stepIndex = firstInvalidField.startsWith('account-') ? 2 : ['singlePartyLimit', 'groupExposureLimit', 'sanctionMargin', 'penaltyCharge', 'penaltyRate'].includes(firstInvalidField) ? 3 : 0;
+      const addressFields = ['addressType', 'pincode', 'address', 'addressLine2', 'landmark', 'city', 'state', 'contactNumber', 'emailId'];
+      const limitFields = ['singlePartyLimit', 'groupExposureLimit', 'sanctionMargin', 'penaltyCharge', 'penaltyRate'];
+      const stepIndex = firstInvalidField.startsWith('account-')
+        ? 2
+        : limitFields.includes(firstInvalidField)
+          ? 3
+          : addressFields.includes(firstInvalidField)
+            ? 1
+            : 0;
       setActiveStep(stepIndex);
       const invalidAccount = firstInvalidField.match(/^account-(\d+)-(.+)$/);
       if (invalidAccount) {
         const index = Number(invalidAccount[1]);
         setAccountDraft({ ...form.accounts[index] });
         setEditingAccountIndex(index);
+        setAccountEntryOpen(true);
         window.setTimeout(() => document.getElementById(`bank-master-account-draft-${invalidAccount[2]}`)?.focus(), 0);
       } else {
         window.setTimeout(() => document.getElementById(`bank-master-${firstInvalidField}`)?.focus(), 0);
@@ -265,18 +382,21 @@ export default function BankMaster() {
   return (
     <AppShell title="">
       <div className="bank-master-page">
-        <PageHeader
-          eyebrow="Administration"
-          title="Bank Master"
-          description="Manage organization bank details and account limits."
-          marquee
-        />
-        <p className="bank-master-local-mode" role="note">
-          Backend access is disconnected. Draft changes stay on this page and are not persisted.
-        </p>
-        {notice && <p className="bank-master-success" role="status"><Check size={16} />{notice}</p>}
+        <div className="bank-master-content">
+          <PageHeader
+            eyebrow="Administration"
+            title="Bank Master"
+            description="Manage organization bank details and account limits."
+            marquee
+          />
+          <p className="bank-master-local-mode" role="note">
+            Bank details are not connected to a save API. Lookup options load from the lookup service.
+          </p>
+          {lookupsLoading && <p className="bank-master-local-mode" role="status">Loading Bank Master lookup options…</p>}
+          {lookupError && <p className="bank-master-field-error" role="alert">{lookupError}</p>}
+          {notice && <p className="bank-master-success" role="status"><Check size={16} />{notice}</p>}
 
-        <section className="bank-master-card" aria-label="Bank master editor">
+          <section className="bank-master-card" aria-label="Bank master editor">
             <form onSubmit={submitForm} noValidate>
               <div className="bank-master-layout">
                 <nav className="bank-master-steps" aria-label="Bank details sections">
@@ -296,7 +416,7 @@ export default function BankMaster() {
                   ))}
                 </nav>
 
-                <div className="bank-master-panel" key={currentStep.id}>
+                <div className={`bank-master-panel${activeStep === 1 ? ' bank-master-panel-address' : ''}`} key={currentStep.id}>
                   <header className="bank-master-panel-heading">
                     <span className="bank-master-panel-icon"><StepIcon size={19} /></span>
                     <div>
@@ -331,118 +451,198 @@ export default function BankMaster() {
                   )}
 
                   {activeStep === 1 && (
-                    <div className="bank-master-fields">
-                      {[
-                        ['Address Type', 'addressType', 60],
-                        ['Pincode', 'pincode', 10],
-                        ['Address', 'address', 200],
-                        ['Address 2', 'addressLine2', 200],
-                        ['Landmark', 'landmark', 120],
-                        ['City', 'city', 100],
-                        ['State / Union Territory', 'state', 100]
-                      ].map(([label, field, maxLength]) => (
-                        <TextField
-                          key={field}
-                          label={label}
-                          field={field}
-                          value={form[field]}
-                          maxLength={maxLength}
-                          error={errors[field]}
-                          onChange={(event) => updateField(field, event.target.value)}
-                        />
-                      ))}
+                    <div className="bank-master-fields bank-master-address-fields">
+                      <LookupSelectField
+                        label="Address Type"
+                        field="addressType"
+                        value={form.addressType}
+                        options={lookupOptions.addressType || []}
+                        loading={lookupsLoading}
+                        error={errors.addressType}
+                        onChange={(event) => updateField('addressType', event.target.value)}
+                      />
+                      <TextField
+                        label="Address1"
+                        field="address"
+                        value={form.address}
+                        maxLength={200}
+                        className="bank-master-field-full"
+                        error={errors.address}
+                        onChange={(event) => updateField('address', event.target.value)}
+                      />
+                      <TextField
+                        label="Address2"
+                        field="addressLine2"
+                        value={form.addressLine2}
+                        maxLength={200}
+                        className="bank-master-field-full"
+                        error={errors.addressLine2}
+                        onChange={(event) => updateField('addressLine2', event.target.value)}
+                      />
+                      <TextField
+                        label="Landmark"
+                        field="landmark"
+                        value={form.landmark}
+                        maxLength={120}
+                        error={errors.landmark}
+                        onChange={(event) => updateField('landmark', event.target.value)}
+                      />
+                      <TextField
+                        label="City"
+                        field="city"
+                        value={form.city}
+                        maxLength={100}
+                        error={errors.city}
+                        onChange={(event) => updateField('city', event.target.value)}
+                      />
+                      <TextField
+                        label="State "
+                        field="state"
+                        value={form.state}
+                        maxLength={100}
+                        error={errors.state}
+                        onChange={(event) => updateField('state', event.target.value)}
+                      />
+                      <TextField
+                        label="Pincode"
+                        field="pincode"
+                        value={form.pincode}
+                        maxLength={6}
+                        inputMode="numeric"
+                        error={errors.pincode}
+                        onChange={(event) => updateField('pincode', event.target.value.replace(/\D/g, ''))}
+                      />
+                      <TextField
+                        label="Contact"
+                        field="contactNumber"
+                        value={form.contactNumber}
+                        maxLength={10}
+                        type="tel"
+                        inputMode="numeric"
+                        error={errors.contactNumber}
+                        onChange={(event) => updateField('contactNumber', event.target.value.replace(/\D/g, ''))}
+                      />
+                      <TextField
+                        label="Email ID"
+                        field="emailId"
+                        value={form.emailId}
+                        maxLength={120}
+                        type="email"
+                        error={errors.emailId}
+                        onChange={(event) => updateField('emailId', event.target.value)}
+                      />
                     </div>
                   )}
 
                   {activeStep === 2 && (
                     <div className="bank-master-accounts">
                       <div className="bank-master-table-heading">
-                        <div><h3>Bank Account Details</h3><p>Add accounts one at a time. Added accounts appear in this draft below.</p></div>
-                      </div>
-                      <section className="bank-master-account-entry" aria-label="Add bank account">
-                        <h4>{editingAccountIndex === null ? 'New account' : `Edit account ${editingAccountIndex + 1}`}</h4>
-                        <div className="bank-master-account-fields">
-                          {[
-                            ['particulars', 'Particulars', 120],
-                            ['bankName', 'Bank Name', 120],
-                            ['accountNumber', 'Account Number', 34],
-                            ['micrCode', 'MICR Code', 9],
-                            ['ifscCode', 'IFSC Code', 11]
-                          ].map(([field, label, maxLength]) => {
-                            const errorKey = `account-draft-${field}`;
-                            return (
-                              <TextField
-                                key={field}
-                                label={label}
-                                field={errorKey}
-                                value={accountDraft[field]}
-                                maxLength={maxLength}
-                                required={field !== 'particulars'}
-                                inputMode={field === 'micrCode' ? 'numeric' : undefined}
-                                autoCapitalize={field === 'ifscCode' || field === 'micrCode' ? 'characters' : undefined}
-                                error={errors[errorKey]}
-                                onChange={(event) => updateAccountDraft(field, ['ifscCode', 'micrCode'].includes(field) ? event.target.value.toUpperCase() : event.target.value)}
-                              />
-                            );
-                          })}
-                          <TextField
-                            label="Account Type"
-                            field="account-draft-accountType"
-                            value={accountDraft.accountType}
-                            required
-                            error={errors['account-draft-accountType']}
-                            onChange={(event) => updateAccountDraft('accountType', event.target.value)}
-                          />
-                        </div>
-                        <div className="bank-master-account-entry-actions">
-                          <button className="bank-master-add-row" type="button" onClick={addAccount}>
-                            {editingAccountIndex === null ? 'Add account' : 'Update account'}
+                        <div><h3>Other Bank Details</h3><p>Add one or more bank accounts. Added accounts appear in the grid below.</p></div>
+                        {!accountEntryOpen && (
+                          <button className="bank-master-add-row" type="button" onClick={() => setAccountEntryOpen(true)}>
+                            Add account
                           </button>
-                          {editingAccountIndex !== null && (
-                            <button className="bank-master-account-cancel-edit" type="button" onClick={() => {
-                              setAccountDraft(emptyAccount());
-                              setEditingAccountIndex(null);
-                              setErrors({});
-                            }}>Cancel edit</button>
-                          )}
-                        </div>
-                        {errors.accountDraft && <small className="bank-master-field-error" role="alert">{errors.accountDraft}</small>}
-                      </section>
-                      {form.accounts.length ? (
-                        <div className="bank-master-account-table-wrap">
-                          <table className="bank-master-account-table">
-                            <thead><tr><th>Particulars</th><th>Bank Name</th><th>Account Type</th><th>Account No.</th><th>MICR Code</th><th>IFSC Code</th><th>Actions</th></tr></thead>
-                            <tbody>
-                              {form.accounts.map((account, index) => (
-                                <tr key={`${account.accountNumber}-${index}`}>
-                                  <td>{account.particulars || '—'}</td>
-                                  <td>{account.bankName}</td>
-                                  <td>{account.accountType}</td>
-                                  <td>{account.accountNumber}</td>
-                                  <td>{account.micrCode}</td>
-                                  <td>{account.ifscCode}</td>
-                                  <td className="bank-master-account-actions">
-                                    <button type="button" onClick={() => editAccount(index)}>Edit</button>
-                                    <button type="button" onClick={() => removeAccount(index)}>Remove</button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      ) : (
-                        <div className="bank-master-account-empty">
-                          <Landmark size={22} />
-                          <strong>No bank accounts added</strong>
-                          <span>Add an account above to include it in this draft.</span>
-                        </div>
+                        )}
+                      </div>
+                      {accountEntryOpen && (
+                        <section className="bank-master-account-entry" aria-label="Add bank account">
+                          <h4>{editingAccountIndex === null ? 'New account' : `Edit account ${editingAccountIndex + 1}`}</h4>
+                          <div className="bank-master-account-fields">
+                            <LookupSelectField
+                              label="Particulars"
+                              field="account-draft-particulars"
+                              value={accountDraft.particulars}
+                              options={lookupOptions.particulars || []}
+                              loading={lookupsLoading}
+                              error={errors['account-draft-particulars']}
+                              onChange={(event) => updateAccountDraft('particulars', event.target.value)}
+                            />
+                            <LookupSelectField
+                              label="Account Type"
+                              field="account-draft-accountType"
+                              value={accountDraft.accountType}
+                              options={lookupOptions.accountType || []}
+                              loading={lookupsLoading}
+                              required
+                              error={errors['account-draft-accountType']}
+                              onChange={(event) => updateAccountDraft('accountType', event.target.value)}
+                            />
+                            {[
+                              ['bankName', 'Bank Name', 120],
+                              ['accountNumber', 'Account Number', 34],
+                              ['micrCode', 'MICR Code', 9],
+                              ['ifscCode', 'IFSC Code', 11]
+                            ].map(([field, label, maxLength]) => {
+                              const errorKey = `account-draft-${field}`;
+                              return (
+                                <TextField
+                                  key={field}
+                                  label={label}
+                                  field={errorKey}
+                                  value={accountDraft[field]}
+                                  maxLength={maxLength}
+                                  required
+                                  inputMode={field === 'micrCode' ? 'numeric' : undefined}
+                                  autoCapitalize={field === 'ifscCode' || field === 'micrCode' ? 'characters' : undefined}
+                                  error={errors[errorKey]}
+                                  onChange={(event) => updateAccountDraft(field, ['ifscCode', 'micrCode'].includes(field) ? event.target.value.toUpperCase() : event.target.value)}
+                                />
+                              );
+                            })}
+                          </div>
+                          <div className="bank-master-account-entry-actions">
+                            <button className="bank-master-add-row" type="button" onClick={addAccount}>
+                              {editingAccountIndex === null ? 'Add account' : 'Update account'}
+                            </button>
+                            <button className="bank-master-account-cancel-edit" type="button" onClick={closeAccountEntry}>
+                              {editingAccountIndex === null ? 'Cancel' : 'Cancel edit'}
+                            </button>
+                          </div>
+                          {errors.accountDraft && <small className="bank-master-field-error" role="alert">{errors.accountDraft}</small>}
+                        </section>
                       )}
+                      <div className="bank-master-account-table-wrap">
+                        <table className="bank-master-account-table">
+                          <thead><tr><th>Particulars</th><th>Bank Name</th><th>Account Type</th><th>Account No.</th><th>MICR Code</th><th>IFSC Code</th><th>Actions</th></tr></thead>
+                          <tbody>
+                            {form.accounts.map((account, index) => (
+                              <tr key={`${account.accountNumber}-${index}`}>
+                                <td>{account.particulars || '—'}</td>
+                                <td>{account.bankName}</td>
+                                <td>{account.accountType}</td>
+                                <td>{account.accountNumber}</td>
+                                <td>{account.micrCode}</td>
+                                <td>{account.ifscCode}</td>
+                                <td className="bank-master-account-actions">
+                                  <button type="button" onClick={() => editAccount(index)}>Edit</button>
+                                  <button type="button" onClick={() => removeAccount(index)}>Remove</button>
+                                </td>
+                              </tr>
+                            ))}
+                            {form.accounts.length === 0 && (
+                              <tr>
+                                <td className="bank-master-account-empty-cell" colSpan="7">
+                                  No accounts added yet. Select Add account to create the first row.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
 
                   {activeStep === 3 && (
                     <div className="bank-master-fields">
-                      <TextField label="Loan Approval Authority" field="approvalAuthority" value={form.approvalAuthority} onChange={(event) => updateField('approvalAuthority', event.target.value)} />
+                      <LookupSelectField
+                        label="Loan Approval Authority"
+                        field="approvalAuthority"
+                        value={form.approvalAuthority}
+                        options={lookupOptions.approvalAuthority || []}
+                        loading={lookupsLoading}
+                        error={errors.approvalAuthority}
+                        onChange={(event) => updateField('approvalAuthority', event.target.value)}
+                      />
                       <TextField label="Single Party Limit" field="singlePartyLimit" value={form.singlePartyLimit} onChange={(event) => updateField('singlePartyLimit', event.target.value)} error={errors.singlePartyLimit} type="number" min="0" step="0.01" inputMode="decimal" />
                       <TextField label="Group Exposure Limit" field="groupExposureLimit" value={form.groupExposureLimit} onChange={(event) => updateField('groupExposureLimit', event.target.value)} error={errors.groupExposureLimit} type="number" min="0" step="0.01" inputMode="decimal" />
                       <TextField label="Sanction Margin %" field="sanctionMargin" value={form.sanctionMargin} onChange={(event) => updateField('sanctionMargin', event.target.value)} error={errors.sanctionMargin} type="number" min="0" max="100" step="0.01" inputMode="decimal" />
@@ -467,7 +667,8 @@ export default function BankMaster() {
                 </div>
               </div>
             </form>
-        </section>
+          </section>
+        </div>
       </div>
     </AppShell>
   );

@@ -1,53 +1,72 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+import axios from "axios";
 
-export async function getBankProfile() {
-  const baseUrl = API_BASE_URL.replace(/\/+$/, "");
-  const apiBaseUrl = /\/api\/v\d+$/i.test(baseUrl) ? baseUrl : `${baseUrl}/api/v1`;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+
+function getAuthData() {
   const storedAuthData = window.localStorage.getItem("authData");
+
   if (!storedAuthData) {
     throw new Error("Verified session data is unavailable. Please sign in again.");
   }
 
-  const headers = { "Content-Type": "application/json" };
-  let authData;
-
   try {
-    authData = JSON.parse(storedAuthData);
+    const authData = JSON.parse(storedAuthData);
+    if (!authData || typeof authData !== "object") {
+      throw new Error("Invalid session data.");
+    }
+    return authData;
   } catch {
     throw new Error("Verified session data is invalid. Please sign in again.");
   }
+}
 
+function getErrorMessage(error) {
+  if (axios.isAxiosError(error)) {
+    const responseData = error.response?.data;
+    const message = responseData?.message || responseData?.error;
+    if (typeof message === "string" && message.trim()) return message;
+    if (!error.response) {
+      return "Unable to reach the bank profile service. Check your connection and try again.";
+    }
+  }
+
+  return error instanceof Error ? error.message : "Unable to load the bank profile.";
+}
+
+export async function getBankProfile() {
+  if (!API_BASE_URL) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+  }
+
+  const authData = getAuthData();
   const organizationId = authData.organizationId ?? authData.organization_id;
 
   if (organizationId === undefined || organizationId === null || organizationId === "") {
     throw new Error("Organization ID is missing from the verified session.");
   }
 
+  const headers = { Accept: "application/json" };
   if (authData.accessToken) {
-    headers.Authorization = "Bearer " + authData.accessToken;
+    headers.Authorization = `Bearer ${authData.accessToken}`;
   }
 
-  const response = await fetch(
-    `${apiBaseUrl}/administration/organizations/${organizationId}`,
-    { method: "GET", headers, cache: "no-store" },
-  );
-
-  let result;
   try {
-    result = await response.json();
-  } catch {
-    throw new Error("Unable to read the bank profile response.");
-  }
-
-  if (!response.ok || result?.success === false) {
-    throw new Error(
-      result?.message || result?.error || "Unable to load the bank profile.",
+    const response = await axios.get(
+      `${API_BASE_URL}/api/setup/banks/${encodeURIComponent(organizationId)}`,
+      { headers },
     );
-  }
+    const result = response.data;
 
-  if (!result?.data || typeof result.data !== "object" || Array.isArray(result.data)) {
-    throw new Error("The bank profile response did not include organization data.");
-  }
+    if (result?.success === false) {
+      throw new Error(result.message || result.error || "Unable to load the bank profile.");
+    }
 
-  return result;
+    if (!result?.data || typeof result.data !== "object" || Array.isArray(result.data)) {
+      throw new Error("The bank profile response did not include organization data.");
+    }
+
+    return result;
+  } catch (error) {
+    throw new Error(getErrorMessage(error));
+  }
 }

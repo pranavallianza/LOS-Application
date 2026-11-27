@@ -213,6 +213,7 @@ export default function CustomerProfileView({ customerId }) {
   const customerEmail = customer?.email || form?.email || '';
   const kycStatus = form?.kycStatus || customer?.kyc || '';
   const activeLoans = customer?.activeLoans ?? (form?.loanHistory?.length || 0);
+  const customerInitials = customerName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 
   return (
     <AppShell title={`View Customer: ${customerId}`}>
@@ -233,16 +234,16 @@ export default function CustomerProfileView({ customerId }) {
             href="/customer_management"
             className="loan-back-button"
             style={{
-              height: '32px',
-              minWidth: 'auto',
-              padding: '0 10px',
-              gap: '5px',
-              fontSize: '13px',
-              background: '#368262',
-              borderColor: '#368262',
+              height: '44px',
+              minWidth: '88px',
+              padding: '0 16px',
+              gap: '6px',
+              fontSize: '14px',
+              background: '#08644f',
+              borderColor: '#08644f',
               color: '#fff',
               textDecoration: 'none',
-              borderRadius: '6px',
+              borderRadius: '10px',
               display: 'inline-flex',
               alignItems: 'center',
               fontWeight: '600',
@@ -259,27 +260,19 @@ export default function CustomerProfileView({ customerId }) {
           </Card>
         ) : (
           <Card className="customer-view-card">
-            {/* 6-Tile Summary Header Card */}
+            {/* Customer summary */}
             <div className="customer-view-summary" aria-label="Customer profile summary">
-              <div className="customer-view-summary-tile highlight">
-                <span><UserRound size={14} aria-hidden="true" /> Customer Name</span>
-                <strong>{customerName}</strong>
+              <div className="customer-view-identity">
+                <div className="customer-view-avatar" aria-hidden="true">{customerInitials || <UserRound size={26} />}</div>
+                <div className="customer-view-identity-copy">
+                  <strong>{customerName}</strong>
+                  <span>{customerPhone}{customerPhone && customerEmail ? '  ·  ' : ''}{customerEmail}</span>
+                </div>
               </div>
-              <div className="customer-view-summary-tile">
-                <span><Phone size={14} aria-hidden="true" /> Phone Number</span>
-                <strong>{customerPhone}</strong>
-              </div>
-              <div className="customer-view-summary-tile">
-                <span><Mail size={14} aria-hidden="true" /> Email Address</span>
-                <strong>{customerEmail}</strong>
-              </div>
-              <div className="customer-view-summary-tile">
-                <span><UserCheck size={14} aria-hidden="true" /> Customer Type</span>
-                <strong>{form?.customerType || customer?.type || ''}</strong>
-              </div>
-              <div className="customer-view-summary-tile">
-                <span><Banknote size={14} aria-hidden="true" /> Active Loans</span>
-                <strong>{activeLoans}</strong>
+              <div className="customer-view-summary-stats">
+                <div><span>Customer type</span><strong>{form?.customerType || customer?.type || ''}</strong></div>
+                <div><span>KYC status</span><strong className="customer-view-kyc-value">{kycStatus}</strong></div>
+                <div><span>Active loans</span><strong>{activeLoans}</strong></div>
               </div>
             </div>
 
@@ -314,7 +307,7 @@ export default function CustomerProfileView({ customerId }) {
 
             {/* Tab Panel Content with Exact Fields of Edit & Add form */}
             <section
-              className="customer-view-tabpanel"
+              className={`customer-view-tabpanel ${activeTab === 'personal' ? 'personal' : ''}`}
               id="customer-view-tabpanel"
               role="tabpanel"
               aria-labelledby={`customer-view-tab-${activeTab}`}
@@ -678,105 +671,23 @@ export default function CustomerProfileView({ customerId }) {
       </div>
 
       <style jsx global>{`
-        .customer-view-page {
-          min-width: 0;
-          color: #243039;
-        }
-
-        .customer-view-top-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-top: -15px;
-          margin-bottom: 24px;
-        }
-
-        .customer-view-main-title {
-          margin: 0;
-          color: #23474c;
-          font-family: Manrope, sans-serif;
-          font-size: 23px;
-          font-weight: 700;
-        }
-
-        .customer-view-sub-id {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          margin: 4px 0 0;
-          color: #177e7a;
-          font-size: 13px;
-          font-weight: 600;
-        }
-
-        .customer-view-card {
-          padding: 22px;
-          border: 1px solid #dfe9eb;
-          border-radius: 12px;
-          background: #fff;
-          box-shadow: 0 4px 20px rgba(18, 42, 54, 0.04);
-        }
-
-        .customer-view-state {
-          min-height: 140px;
-          display: grid;
-          place-items: center;
-          color: #718185;
-        }
-
-        /* 6-Tile Summary Header */
-        .customer-view-summary {
-          display: grid;
-          grid-template-columns: repeat(3, minmax(0, 2fr)) repeat(2, minmax(0, 1fr));
-          gap: 12px;
-          margin-bottom: 20px;
-        }
-
-        @media (max-width: 860px) {
-          .customer-view-summary {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
-
-        @media (max-width: 520px) {
-          .customer-view-summary {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        .customer-view-summary-tile {
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-          min-height: 68px;
-          padding: 12px 14px;
-          border: 1px solid #e1ebed;
-          border-radius: 9px;
-          background: #fbfdfd;
-        }
-
-        .customer-view-summary-tile.highlight {
-          border-left: 3px solid #177e7a;
-          background: #f7fbfb;
-        }
-
-        .customer-view-summary-tile span {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          color: #6f858a;
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: none;
-          letter-spacing: 0.03em;
-        }
-
-        .customer-view-summary-tile strong {
-          color: #1d3b48;
-          font-size: 14px;
-          font-weight: 700;
-          line-height: 1.35;
-        }
+        .customer-view-page { min-width: 0; color: #1c3035; }
+        .customer-view-top-header { display:flex; align-items:center; justify-content:space-between; margin-top:-15px; margin-bottom:20px; }
+        .customer-view-sub-id { display:flex; align-items:center; gap:12px; margin:0; color:#526871; font-size:13px; font-weight:500; }
+        .customer-view-sub-id > span:first-child { color:#526871; }
+        .customer-view-card { padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; }
+        .customer-view-state { min-height:140px; display:grid; place-items:center; color:#718185; padding:24px; border:1px solid #dce7e5; border-radius:16px; background:#fff; }
+        .customer-view-summary { min-height:112px; display:flex; align-items:center; justify-content:space-between; gap:28px; margin-bottom:20px; padding:22px 24px; border:1px solid #dce7e5; border-radius:16px; background:#fff; }
+        .customer-view-identity { display:flex; align-items:center; gap:16px; min-width:0; }
+        .customer-view-avatar { width:64px; height:64px; flex:0 0 64px; display:grid; place-items:center; border-radius:50%; background:#08644f; color:#fff; font-size:21px; font-weight:700; }
+        .customer-view-identity-copy { display:flex; flex-direction:column; gap:3px; min-width:0; }
+        .customer-view-identity-copy strong { overflow:hidden; color:#1b2c31; font-size:23px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+        .customer-view-identity-copy span { overflow:hidden; color:#5b7079; font-size:14px; text-overflow:ellipsis; white-space:nowrap; }
+        .customer-view-summary-stats { display:flex; align-items:center; }
+        .customer-view-summary-stats > div { min-width:112px; display:flex; flex-direction:column; gap:4px; padding:0 20px; border-left:1px solid #e2eae8; }
+        .customer-view-summary-stats > div span { color:#61747b; font-size:12px; }
+        .customer-view-summary-stats > div strong { color:#1d3034; font-size:15px; font-weight:600; }
+        .customer-view-summary-stats > div strong.customer-view-kyc-value { color:#08745b; }
 
         .kyc-badge {
           display: inline-flex;
@@ -802,48 +713,45 @@ export default function CustomerProfileView({ customerId }) {
         }
 
         /* Tabs Navigation */
-        .customer-view-tabs {
-          display: flex;
-          gap: 6px;
-          margin-bottom: 20px;
-          padding: 4px;
-          overflow-x: auto;
-          border: 1px solid #368262;
-          border-radius: 9px;
-          background: #fff;
-          scrollbar-width: thin;
-        }
+        .customer-view-tabs { display:flex; gap:0; margin-bottom:20px; padding:0 12px; overflow-x:auto; border:1px solid #dce7e5; border-radius:16px; background:#fff; scrollbar-width:thin; }
 
         .customer-view-tab {
           display: inline-flex;
           align-items: center;
           gap: 8px;
           flex: 0 0 auto;
-          min-height: 38px;
-          padding: 8px 14px;
-          border: 1px solid #c8e5d2;
-          border-radius: 6px;
+          min-height: 48px;
+          padding: 8px 16px;
+          border: 0;
+          border-radius: 0;
           background: #fff;
           color: #60757b;
           font-family: inherit;
-          font-size: 12.5px;
-          font-weight: 600;
+          font-size: 13px;
+          font-weight: 500;
           white-space: nowrap;
           cursor: pointer;
           transition: all 0.15s ease;
         }
 
         .customer-view-tab:hover {
-          background: #edf6f4;
-          color: #177e7a;
+          background: #f5f9f8;
+          color: #08745b;
         }
 
         .customer-view-tab.active {
-          border-color: #c0deda;
-          background: #e6f3f0;
-          color: #13605d;
-          box-shadow: inset 0 -2px 0 #177e7a;
+          background: #fff;
+          color: #08745b;
+          box-shadow: inset 0 -3px 0 #08745b;
         }
+
+        .customer-view-tab svg { display:none; }
+        .customer-view-tabpanel { padding:28px 32px; border:1px solid #dce7e5; border-radius:16px; background:#fff; }
+        .customer-view-tabpanel:focus { outline:2px solid #08745b; outline-offset:2px; }
+        .customer-view-tabpanel.personal > .customer-view-sections-stack:first-child { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:20px 24px; }
+        .customer-view-tabpanel.personal > .customer-view-sections-stack:first-child > .customer-view-section-card { display:contents; }
+        .customer-view-tabpanel.personal > .customer-view-sections-stack:first-child .customer-view-section-header { display:none; }
+        .customer-view-tabpanel.personal > .customer-view-sections-stack:first-child .customer-view-grid { display:contents; }
 
         /* Section Cards & Stacks */
         .customer-view-sections-stack {
@@ -854,10 +762,10 @@ export default function CustomerProfileView({ customerId }) {
 
         .customer-view-section-card {
           padding: 20px 22px;
-          border: 1px solid #dfe9eb;
-          border-radius: 10px;
+          border: 1px solid #e5edeb;
+          border-radius: 12px;
           background: #fff;
-          box-shadow: 0 2px 8px rgba(23, 63, 73, 0.025);
+          box-shadow: none;
         }
 
         .customer-view-section-header {
@@ -912,20 +820,20 @@ export default function CustomerProfileView({ customerId }) {
         .view-detail-box {
           display: flex;
           flex-direction: column;
-          gap: 6px;
-          padding: 12px 14px;
-          border: 1px solid #e2ecee;
-          border-radius: 8px;
-          background: #f8fbfc;
+          gap: 5px;
+          padding: 4px 0;
+          border: 0;
+          border-radius: 0;
+          background: transparent;
           min-width: 0;
         }
 
         .view-detail-label {
-          color: #6f878d;
-          font-size: 11px;
-          font-weight: 600;
+          color: #5a7078;
+          font-size: 12px;
+          font-weight: 500;
           text-transform: none;
-          letter-spacing: 0.04em;
+          letter-spacing: 0;
         }
 
         .view-detail-value-wrap {
@@ -935,8 +843,8 @@ export default function CustomerProfileView({ customerId }) {
         }
 
         .view-detail-value {
-          color: #1d3b48;
-          font-size: 14.5px;
+          color: #1c3035;
+          font-size: 15px;
           font-weight: 500;
           line-height: 1.4;
           overflow-wrap: anywhere;
@@ -1035,12 +943,24 @@ export default function CustomerProfileView({ customerId }) {
         }
 
         .customer-view-footer {
-          margin-top: 22px;
-          padding-top: 14px;
-          border-top: 1px solid #e8efee;
-          color: #8fa0a3;
-          font-size: 12px;
-          text-align: right;
+          display:flex; justify-content:flex-end; gap:8px; margin-top:20px; padding:0; border:0; color:#5b7079; font-size:13px; text-align:right;
+        }
+
+        @media (max-width: 900px) {
+          .customer-view-summary { align-items:flex-start; flex-direction:column; }
+          .customer-view-summary-stats > div:first-child { border-left:0; padding-left:0; }
+          .customer-view-tabpanel.personal > .customer-view-sections-stack:first-child { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
+        @media (max-width: 560px) {
+          .customer-view-top-header { margin-top:0; }
+          .customer-view-summary { padding:18px; }
+          .customer-view-avatar { width:52px; height:52px; flex-basis:52px; }
+          .customer-view-identity-copy strong { font-size:19px; }
+          .customer-view-identity-copy span { white-space:normal; }
+          .customer-view-summary-stats { width:100%; justify-content:space-between; }
+          .customer-view-summary-stats > div { min-width:0; padding:0 10px; }
+          .customer-view-tabpanel { padding:20px 18px; }
+          .customer-view-tabpanel.personal > .customer-view-sections-stack:first-child { grid-template-columns:1fr; }
         }
       `}</style>
     </AppShell>

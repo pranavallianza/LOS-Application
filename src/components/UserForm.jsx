@@ -27,13 +27,6 @@ import {
 } from '../services/employeeService';
 
 import {
-  createUser,
-  USER_ORGANIZATION_CODE,
-  USER_ORGANIZATION_ID,
-  USER_ORGANIZATION_NAME,
-} from '../services/leadService';
-
-import {
   getMaxDateFor18YearsOld,
   calculateAge,
   isAtLeast18YearsOld,
@@ -1347,6 +1340,12 @@ export default function UserForm({
 
     try {
       if (!isEdit) {
+        const {
+          createUser,
+          USER_ORGANIZATION_CODE,
+          USER_ORGANIZATION_ID,
+          USER_ORGANIZATION_NAME,
+        } = await import('../services/leadService');
         const userPayload = {
           empNo: employeeRecord.empNo,
 

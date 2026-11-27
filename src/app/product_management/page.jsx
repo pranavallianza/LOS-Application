@@ -8,13 +8,13 @@ import { saveProductManagementProduct } from '../../services/productManagement';
 
 const STORAGE_KEY = 'los_product_management_records';
 const initialForm = {
-  productCode: '', productName: '', emi: '', emiType: '', minTenure: '', minTenureUnit: 'Months', maxTenure: '', maxTenureUnit: 'Months',
+  productCode: '', productName: '', emiFixedDate: '', emi: '', emiType: '', minTenure: '', minTenureUnit: 'Months', maxTenure: '', maxTenureUnit: 'Months',
   minAmount: '', maxAmount: '', penalty: '', penaltyPercent: '', daysInYear: '', intBaseMethod: '', interestFrequency: '', calculationMode: '',
   delegationPower: [{ id: 1, limit: '', power: '' }]
 };
 
 const fieldList = [
-  ['productCode', 'Product Code'], ['productName', 'Product Name'], ['emi', 'E.M.I.'], ['emiType', 'E.M.I. Type'],
+  ['productCode', 'Product Code'], ['productName', 'Product Name'], ['emiFixedDate', 'EMI Fixed Date'], ['emi', 'E.M.I.'], ['emiType', 'E.M.I. Type'],
   ['minTenure', 'Min. Tenure'], ['maxTenure', 'Max. Tenure'], ['minAmount', 'Min. Amount'], ['maxAmount', 'Max. Amount'],
   ['penalty', 'Penalty'], ['penaltyPercent', 'Penalty %'], ['daysInYear', 'No. of Days in a Year'], ['intBaseMethod', 'Int Base Method'],
   ['interestFrequency', 'Interest Calculation Frequency'], ['calculationMode', 'Interest Calculation Mode']
@@ -65,7 +65,7 @@ function persistProducts(products) {
 
 function validate(form, products, editingId) {
   const errors = {};
-  const required = ['productCode', 'productName', 'emi', 'emiType', 'minTenure', 'maxTenure', 'minAmount', 'maxAmount', 'penalty', 'daysInYear', 'intBaseMethod', 'interestFrequency', 'calculationMode'];
+  const required = ['productCode', 'productName', 'emiFixedDate', 'emi', 'emiType', 'minTenure', 'maxTenure', 'minAmount', 'maxAmount', 'penalty', 'daysInYear', 'intBaseMethod', 'interestFrequency', 'calculationMode'];
   if (form.penalty === 'Yes') required.push('penaltyPercent');
   required.forEach((field) => { if (!String(form[field]).trim()) errors[field] = 'This field is required.'; });
   if (form.productCode && !/^[A-Z0-9][A-Z0-9_-]{1,19}$/i.test(form.productCode.trim())) errors.productCode = 'Use 2–20 letters, numbers, hyphens, or underscores.';
@@ -143,6 +143,7 @@ export default function ProductManagementPage() {
     setForm({
       ...initialForm,
       ...Object.fromEntries(Object.keys(initialForm).map((field) => [field, String(product[field] ?? initialForm[field])])),
+      emiFixedDate: normalizeYesNo(product.emiFixedDate),
       emi: normalizeEmiTiming(product.emi),
       emiType: normalizeEmiTiming(product.emiType),
       delegationPower: Array.isArray(product.delegationPower) && product.delegationPower.length
@@ -224,7 +225,7 @@ export default function ProductManagementPage() {
     setSaving(true);
     try {
       const result = await saveProductManagementProduct({
-        product_code: record.productCode, product_name: record.productName, emi: form.emi, emi_type: form.emiType,
+        product_code: record.productCode, product_name: record.productName, emi_fixed_date: form.emiFixedDate, emi: form.emi, emi_type: form.emiType,
         min_tenure_months: tenureInMonths(form.minTenure, form.minTenureUnit), max_tenure_months: tenureInMonths(form.maxTenure, form.maxTenureUnit), min_amount: Number(form.minAmount),
         max_amount: Number(form.maxAmount), penalty: form.penalty === 'Yes', penalty_percent: form.penalty === 'Yes' ? Number(form.penaltyPercent) : null,
         no_of_days_in_year: Number(form.daysInYear), int_base_method: form.intBaseMethod,
@@ -359,6 +360,8 @@ export default function ProductManagementPage() {
                   if (field === 'penaltyPercent' && form.penalty !== 'Yes') return null;
                   const choices = ['emi', 'emiType'].includes(field)
                     ? [['Arrears', 'Arrears'], ['Int in Advance', 'Int in Advance']]
+                    : field === 'emiFixedDate'
+                      ? [['Yes', 'Yes'], ['No', 'No']]
                     : field === 'penalty'
                     ? [['Yes', 'Yes'], ['No', 'No']]
                     : field === 'interestFrequency'
@@ -369,10 +372,9 @@ export default function ProductManagementPage() {
                         ? [['Principal Outstanding', 'Principal Outstanding'], ['Principal Total', 'Principal Total']]
                         : null;
                   const numeric = ['minTenure', 'maxTenure', 'minAmount', 'maxAmount', 'penaltyPercent', 'daysInYear'].includes(field);
-                  const wide = field === 'productName';
                   const longLabel = ['intBaseMethod', 'interestFrequency', 'calculationMode'].includes(field);
                   return (
-                    <div className={`pm-field${wide ? ' pm-wide pm-name' : ''}${longLabel ? ' pm-long-field' : ''}`} key={field}>
+                    <div className={`pm-field${longLabel ? ' pm-long-field' : ''}`} key={field}>
                       <label htmlFor={`pm-${field}`}><span>{label} <em aria-hidden="true">*</em></span></label>
                       {choices ? (
                         <select id={`pm-${field}`} aria-label={label} value={form[field]} onChange={(event) => change(field, event.target.value)} aria-required="true" aria-invalid={Boolean(errors[field])} aria-describedby={errors[field] ? `pm-${field}-error` : undefined}>
@@ -434,7 +436,7 @@ export default function ProductManagementPage() {
             <header className="pm-dialog-head"><div><h2 id="pm-view-title">{dialog.product.productName}</h2><p>Product details</p></div><button type="button" className="pm-close" onClick={() => setDialog(null)} aria-label="Close product details"><X size={18} /></button></header>
             <div className="pm-view-body">
               <div className="pm-detail">{fieldList.filter(([field]) => field !== 'penaltyPercent' || normalizeYesNo(dialog.product.penalty) === 'Yes').map(([field, label]) => {
-                const value = field === 'penalty' ? normalizeYesNo(dialog.product[field])
+                const value = ['penalty', 'emiFixedDate'].includes(field) ? normalizeYesNo(dialog.product[field])
                   : field === 'emi' ? normalizeEmiTiming(dialog.product[field])
                   : field === 'minTenure' ? formatTenure(dialog.product.minTenure, dialog.product.minTenureUnit)
                     : field === 'maxTenure' ? formatTenure(dialog.product.maxTenure, dialog.product.maxTenureUnit)

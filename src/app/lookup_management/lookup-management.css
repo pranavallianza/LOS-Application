@@ -8,11 +8,15 @@
   --lookup-accent: #247b74;
   --lookup-accent-strong: #176760;
   --lookup-focus: #439b91;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin: -4px 0 0;
   color: var(--lookup-ink);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
-  margin: -4px auto 0;
-  max-width: 1400px;
   font-family: "DM Sans", sans-serif;
 }
 
@@ -91,6 +95,7 @@
 
 .lookup-card,
 .lookup-list-section {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--lookup-line);
   border-radius: 9px;
@@ -384,6 +389,8 @@
 }
 
 .lookup-table-wrap {
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   border-top: 1px solid var(--lookup-soft-line);
 }

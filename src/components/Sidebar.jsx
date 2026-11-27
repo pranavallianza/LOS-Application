@@ -43,7 +43,7 @@ const NAV = [
         icon: UserPlus,
         href: "/customer_management",
       },
-      { label: "Loan application", icon: FilePlus2, href: "/loan_application" },
+      { label: "Retail Loan Application", icon: FilePlus2, href: "/loan_application" },
       {
         label: "Gold Loan Application",
         icon: Coins,
@@ -67,7 +67,7 @@ const NAV = [
         disabled: true,
         permissionHref: "/customer_management",
       },
-      { label: "Loan application", icon: FilePlus2, href: "/loan_application" },
+      { label: "Retail Loan Application", icon: FilePlus2, href: "/loan_application" },
     ],
   },
   {
@@ -117,6 +117,11 @@ const NAV = [
         label: "Bank branch",
         icon: Building2,
         href: "/bank_branch",
+      },
+      {
+        label: "Bank branch list",
+        icon: Building2,
+        href: "/bank_branch_list",
       },
     ],
   },

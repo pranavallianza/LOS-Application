@@ -10,6 +10,10 @@
   --allow: #1f7a4d;
   --override: #b26a00;
   --reject: #c0392b;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  margin: 0 auto;
   font-family: inherit;
   color: var(--rl-ink);
   padding: 0 0 28px;
@@ -67,6 +71,7 @@
 }
 
 .rl-card {
+  min-width: 0;
   background: #fff;
   border: 1px solid var(--rl-line);
   border-radius: 7px;
@@ -119,6 +124,7 @@
 
 .rl-grid {
   display: grid;
+  min-width: 0;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
   gap: 16px;
 }
@@ -204,7 +210,7 @@
   margin-top: 18px;
 }
 
-.btn {
+.rl-page .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -218,19 +224,19 @@
   cursor: pointer;
   border: 1px solid transparent;
 }
-.btn.primary {
+.rl-page .btn.primary {
   background: var(--rl-teal);
   color: #fff;
 }
-.btn.primary:hover {
+.rl-page .btn.primary:hover {
   background: var(--rl-teal-dark);
 }
-.btn.ghost {
+.rl-page .btn.ghost {
   background: #fff;
   border-color: #cfddda;
   color: var(--rl-ink);
 }
-.btn.ghost:hover {
+.rl-page .btn.ghost:hover {
   background: var(--rl-bg);
 }
 
@@ -294,6 +300,8 @@
 }
 
 .rl-scroll {
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   margin: 0 20px 20px;
   border: 1px solid var(--rl-line);
@@ -334,22 +342,22 @@
   padding: 36px 18px;
 }
 
-.pill {
+.rl-page .pill {
   display: inline-block;
   padding: 4px 9px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 700;
 }
-.pill.allow {
+.rl-page .pill.allow {
   background: #e3f3ea;
   color: var(--allow);
 }
-.pill.override {
+.rl-page .pill.override {
   background: #fcefd6;
   color: var(--override);
 }
-.pill.reject {
+.rl-page .pill.reject {
   background: #fbe4e1;
   color: var(--reject);
 }
@@ -411,6 +419,7 @@
     grid-column: auto;
   }
   .rl-listhead {
+    flex-wrap: wrap;
     padding: 15px 14px 12px;
   }
   .rl-toolbar {

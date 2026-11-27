@@ -64,6 +64,7 @@ export default function LeadDatePicker({
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState(null);
   const useViewportPopover =
+    popupPlacement === 'side' ||
     className.includes('document-expiry-date-picker') ||
     className.includes('previous-employment-date-picker') ||
     className.includes('loan-history-date-picker');
