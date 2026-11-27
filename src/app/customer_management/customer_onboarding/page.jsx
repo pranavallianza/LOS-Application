@@ -29,6 +29,12 @@ import {
   getRetailCustomerOnboardingLeads,
 } from '../../../services/retail_customer_onboarding';
 import {
+  createIndividualCustomer,
+  getIndividualCustomerDocuments,
+  getIndividualCustomers,
+} from '../../../services/individual_customer_onboarding.js';
+import { getLookupTypes } from '../../../services/lookups.js';
+import {
   createCustomerRecord,
   getCustomerLoanHistory,
   normalizeCustomerType,
@@ -54,6 +60,27 @@ const wizardSteps = [
   { id: 'references', label: 'Reference', icon: Users },
   { id: 'documents', label: 'Documents', icon: FileText }
 ];
+
+const LOOKUP_NAME_ALIASES = {
+  title: ['title', 'salutation'],
+  residentialstatus: ['residentialstatus'],
+  residentialtype: ['residentialtype'],
+  employmenttype: ['employmenttype'],
+  employertype: ['employertype'],
+  listedstatus: ['listedstatus', 'listingstatus'],
+  riskcategory: ['riskcategory'],
+  incometaxfilerstatus: ['incometaxfilerstatus', 'taxfilerstatus'],
+  documentname: ['documentname', 'documenttype'],
+};
+
+function getLookupOptions(lookupTypes, label) {
+  const lookupName = String(label).replace(/\s*\*$/, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const acceptedNames = LOOKUP_NAME_ALIASES[lookupName] || [lookupName];
+  const lookup = lookupTypes.find((item) =>
+    acceptedNames.includes(String(item.name || '').replace(/[^a-z0-9]/gi, '').toLowerCase()),
+  );
+  return lookup?.subLookups?.map((option) => option.name).filter(Boolean) || [];
+}
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MOBILE_REGEX = /^[6-9]\d{9}$/;
@@ -90,7 +117,6 @@ const NAME_ERROR_FIELDS = new Set([
   'designation'
 ]);
 const INVALID_NAME_MESSAGE = 'Enter correct name';
-const TITLE_OPTIONS = ['Mr', 'Ms', 'Mrs'];
 const LETTERS_ONLY_FIELDS = new Set([
   ...PERSON_NAME_FIELDS,
   'branch',
@@ -472,7 +498,7 @@ const getFileError = (file) => {
   return '';
 };
 
-const validateStep = (stepIndex, values) => {
+const validateStep = (stepIndex, values, lookupTypes = []) => {
   const errors = {};
 
   const required = (key, value, message) => {
@@ -557,10 +583,21 @@ const validateStep = (stepIndex, values) => {
     required('motherLastName', values.motherLastName, "Mother's last name is required.");
 
     ['fatherTitle', 'motherTitle', 'spouseTitle'].forEach((key) => {
-      if (values[key] && !TITLE_OPTIONS.includes(values[key])) {
+      if (
+        values[key]
+        && lookupTypes.length
+        && !getLookupOptions(lookupTypes, 'Title').includes(values[key])
+      ) {
         errors[key] = 'Select a valid title.';
       }
     });
+    if (
+      values.title
+      && lookupTypes.length
+      && !getLookupOptions(lookupTypes, 'Title').includes(values.title)
+    ) {
+      errors.title = 'Select a valid title.';
+    }
 
     required('spouseFirstName', values.spouseFirstName, "Spouse's first name is required.");
     required('spouseLastName', values.spouseLastName, "Spouse's last name is required.");
@@ -1113,6 +1150,7 @@ export default function LoanApplicationPage() {
   const [form, setForm] = useState(createInitialForm);
   const [validationErrors, setValidationErrors] = useState({});
   const [submissionSuccess, setSubmissionSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customerId, setCustomerId] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
@@ -1126,6 +1164,11 @@ export default function LoanApplicationPage() {
   const [leadPickerError, setLeadPickerError] = useState('');
   const [selectingLeadId, setSelectingLeadId] = useState('');
   const [leadPrefilled, setLeadPrefilled] = useState(false);
+  const [lookupTypes, setLookupTypes] = useState([]);
+  const [lookupError, setLookupError] = useState('');
+  const [customerDocumentsLoading, setCustomerDocumentsLoading] = useState(false);
+  const [customerDocumentsError, setCustomerDocumentsError] = useState('');
+  const [documentsLoadedLeadId, setDocumentsLoadedLeadId] = useState('');
 
   const openLeadPicker = async () => {
     setLeadSearch('');
@@ -1171,11 +1214,88 @@ export default function LoanApplicationPage() {
   const clearLeadForm = () => {
     setForm(createInitialForm());
     setLeadPrefilled(false);
+    setDocumentsLoadedLeadId('');
+    setCustomerDocumentsError('');
     setValidationErrors({});
     setSaveError('');
     setSubmissionSuccess(false);
     setCurrentStep(0);
   };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getLookupTypes(controller.signal)
+      .then(setLookupTypes)
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setLookupError('Dropdown options could not be loaded. Check your connection and try again.');
+        }
+      });
+
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const leadId = String(form.leadId || '').trim();
+    if (currentStep !== 6 || !leadId || documentsLoadedLeadId === leadId) return undefined;
+
+    let active = true;
+    setCustomerDocumentsLoading(true);
+    setCustomerDocumentsError('');
+
+    const loadDocuments = async () => {
+      const customers = await getIndividualCustomers();
+      const customer = customers.find((item) => {
+        const customerLeadId =
+          item.leadId ?? item.leadID ?? item.lead_id ?? item.lead?.leadId ?? '';
+        return String(customerLeadId).trim() === leadId;
+      });
+      if (!customer) {
+        throw new Error(`No customer was found for lead ${leadId}.`);
+      }
+
+      const customerCode =
+        customer.customerCode ?? customer.customer_code ?? customer.code ?? '';
+      if (!customerCode) {
+        throw new Error(`The customer record for lead ${leadId} has no customer code.`);
+      }
+
+      const documents = await getIndividualCustomerDocuments(customerCode);
+      if (!active) return;
+      setForm((previous) => ({
+        ...previous,
+        documents: documents.map((document) => ({
+          name: document.documentName
+            ?? document.documentTypeName
+            ?? document.documentType
+            ?? document.name
+            ?? document.type
+            ?? '',
+          required: Boolean(document.required),
+          file: null,
+          expiryDate: document.expiryDate ?? document.expiry_date ?? '',
+          remarks: document.remarks ?? '',
+        })),
+      }));
+      setDocumentsLoadedLeadId(leadId);
+    };
+
+    loadDocuments()
+      .catch((error) => {
+        if (active) {
+          setCustomerDocumentsError(
+            error instanceof Error ? error.message : 'Unable to load customer documents.',
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setCustomerDocumentsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [currentStep, form.leadId, documentsLoadedLeadId]);
 
   useEffect(() => {
     if (!submissionSuccess) return undefined;
@@ -1287,7 +1407,7 @@ export default function LoanApplicationPage() {
       ...(field === 'dob' ? { age: getAge(sanitizedValue) } : {})
     }));
 
-    const stepErrors = validateStep(currentStep, nextForm);
+    const stepErrors = validateStep(currentStep, nextForm, lookupTypes);
     let liveError = stepErrors[field];
     if (sanitizedValue !== value) {
       if (field === 'leadId') {
@@ -1337,7 +1457,7 @@ export default function LoanApplicationPage() {
     setForm(nextForm);
 
     const errorKey = `${collection}.${index}.${field}`;
-    const stepErrors = validateStep(currentStep, nextForm);
+    const stepErrors = validateStep(currentStep, nextForm, lookupTypes);
     let liveError = stepErrors[errorKey];
     if (sanitizedValue !== value) {
       liveError = LETTERS_ONLY_FIELDS.has(field)
@@ -1405,7 +1525,7 @@ export default function LoanApplicationPage() {
     || isPreviousEmploymentRowComplete(form.previousEmployment[form.previousEmployment.length - 1]);
 
   const validateCurrentStep = () => {
-    const errors = validateStep(currentStep, form);
+    const errors = validateStep(currentStep, form, lookupTypes);
 
     setValidationErrors((previous) => ({
       ...previous,
@@ -1419,7 +1539,7 @@ export default function LoanApplicationPage() {
     setCurrentStep(targetStep);
   };
 
-  const goNext = () => {
+  const goNext = async () => {
     if (!validateCurrentStep()) {
       if (isLastStep) {
         setSaveError('Please correct the highlighted fields before submitting.');
@@ -1433,7 +1553,7 @@ export default function LoanApplicationPage() {
     }
 
     const allErrors = wizardSteps.map((_, index) =>
-      validateStep(index, form)
+      validateStep(index, form, lookupTypes)
     );
 
     const firstInvalidStep = allErrors.findIndex(
@@ -1451,10 +1571,10 @@ export default function LoanApplicationPage() {
       return;
     }
 
+    setIsSaving(true);
     try {
       const records = readCustomerRecords(api.customers);
       const existingCustomer = records.find((record) => record.id === customerId);
-      const id = customerId || createCustomerId(records);
       const formToSave = {
         ...form,
         fatherName: [form.fatherFirstName, form.fatherMiddleName, form.fatherLastName]
@@ -1466,6 +1586,17 @@ export default function LoanApplicationPage() {
           .filter(Boolean)
           .join(' ')
       };
+      const savedCustomer = await createIndividualCustomer(formToSave);
+      const savedCustomerData = savedCustomer?.data && !Array.isArray(savedCustomer.data)
+        ? savedCustomer.data
+        : savedCustomer;
+      const id = customerId || String(
+        savedCustomerData?.customerCode
+        ?? savedCustomerData?.customer_code
+        ?? savedCustomerData?.code
+        ?? savedCustomerData?.id
+        ?? createCustomerId(records),
+      );
       const updatedCustomer = createCustomerRecord(formToSave, {
         ...(existingCustomer || {}),
         id,
@@ -1485,6 +1616,8 @@ export default function LoanApplicationPage() {
         ? `Customer Onboarding submission failed. ${error.message}`
         : 'Customer Onboarding submission failed.');
       setSubmissionSuccess(false);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1697,7 +1830,7 @@ export default function LoanApplicationPage() {
               const Icon = step.icon;
               const isActive = index === currentStep;
               const isDone = index < currentStep;
-              const isComplete = Object.keys(validateStep(index, form)).length === 0;
+              const isComplete = Object.keys(validateStep(index, form, lookupTypes)).length === 0;
 
               return (
                 <button
@@ -1720,8 +1853,24 @@ export default function LoanApplicationPage() {
 
           {submissionSuccess && (
             <div className="customer-onboarding-notice customer-onboarding-notice-success" role="status">
-              <strong>✓ Customer onboarding completed successfully.</strong>
+              <strong>✓ Customer onboarding saved successfully.</strong>
               <span>Customer ID: {customerId}</span>
+            </div>
+          )}
+          {lookupError && (
+            <div
+              role="alert"
+              style={{
+                margin: '12px 0',
+                padding: '10px 12px',
+                border: '1px solid #efcaca',
+                borderRadius: '8px',
+                background: '#fff5f5',
+                color: '#8f2d2d',
+                fontSize: '13px',
+              }}
+            >
+              {lookupError}
             </div>
           )}
           {saveError && <div className="customer-onboarding-notice customer-onboarding-notice-error" role="alert">{saveError}</div>}
@@ -1763,7 +1912,7 @@ export default function LoanApplicationPage() {
                   label="Title *"
                   value={form.title}
                   onChange={(value) => updateField('title', value)}
-                  options={['Mr', 'Ms', 'Mrs']}
+                  options={getLookupOptions(lookupTypes, 'Title')}
                   error={currentStepErrors.title}
                 />
 
@@ -1828,7 +1977,7 @@ export default function LoanApplicationPage() {
                   label="Title *"
                   value={form.fatherTitle}
                   onChange={(value) => updateField('fatherTitle', value)}
-                  options={TITLE_OPTIONS}
+                  options={getLookupOptions(lookupTypes, 'Title')}
                   error={currentStepErrors.fatherTitle}
                 />
                 <Field
@@ -1859,7 +2008,7 @@ export default function LoanApplicationPage() {
                   label="Title *"
                   value={form.motherTitle}
                   onChange={(value) => updateField('motherTitle', value)}
-                  options={TITLE_OPTIONS}
+                  options={getLookupOptions(lookupTypes, 'Title')}
                   error={currentStepErrors.motherTitle}
                 />
                 <Field
@@ -1890,7 +2039,7 @@ export default function LoanApplicationPage() {
                   label={form.maritalStatus === 'Married' ? 'Title *' : 'Title'}
                   value={form.spouseTitle}
                   onChange={(value) => updateField('spouseTitle', value)}
-                  options={TITLE_OPTIONS}
+                  options={getLookupOptions(lookupTypes, 'Title')}
                   error={currentStepErrors.spouseTitle}
                 />
                 <Field
@@ -2025,7 +2174,7 @@ export default function LoanApplicationPage() {
                   onChange={(value) =>
                     updateField('residentialStatus', value)
                   }
-                  options={['Resident', 'Non-Resident']}
+                  options={getLookupOptions(lookupTypes, 'Residential Status')}
                   error={currentStepErrors.residentialStatus}
                 />
 
@@ -2035,12 +2184,7 @@ export default function LoanApplicationPage() {
                   onChange={(value) =>
                     updateField('residentialType', value)
                   }
-                  options={[
-                    'Owned',
-                    'Rented',
-                    'Family Owned',
-                    'Company Provided'
-                  ]}
+                  options={getLookupOptions(lookupTypes, 'Residential Type')}
                   error={currentStepErrors.residentialType}
                 />
 
@@ -2130,10 +2274,7 @@ export default function LoanApplicationPage() {
                   label="Employment Type *"
                   value={form.employmentType}
                   onChange={(value) => updateField('employmentType', value)}
-                  options={[
-                    'Salaried',
-                    'Self Employed'
-                  ]}
+                  options={getLookupOptions(lookupTypes, 'Employment Type')}
                   error={currentStepErrors.employmentType}
                 />
 
@@ -2141,15 +2282,7 @@ export default function LoanApplicationPage() {
                   label="Employer Type"
                   value={form.employerType}
                   onChange={(value) => updateField('employerType', value)}
-                  options={[
-                    'Private',
-                    'Public',
-                    'Government',
-                    'Partnership',
-                    'Proprietorship',
-                    'Self Employed',
-                    'Other'
-                  ]}
+                  options={getLookupOptions(lookupTypes, 'Employer Type')}
                 />
 
                 <Field
@@ -2220,7 +2353,7 @@ export default function LoanApplicationPage() {
                   label="Listed Status"
                   value={form.listedStatus}
                   onChange={(value) => updateField('listedStatus', value)}
-                  options={['Listed', 'Unlisted']}
+                  options={getLookupOptions(lookupTypes, 'Listed Status')}
                 />
 
                 {form.employmentType === 'Self Employed' && (
@@ -2400,7 +2533,7 @@ export default function LoanApplicationPage() {
                     if (!isPreviousEmploymentRowComplete(lastEmploymentRow)) {
                       const rowIndex = form.previousEmployment.length - 1;
                       const rowErrors = Object.fromEntries(
-                        Object.entries(validateStep(currentStep, form)).filter(([key]) =>
+                        Object.entries(validateStep(currentStep, form, lookupTypes)).filter(([key]) =>
                           key.startsWith(`previousEmployment.${rowIndex}.`)
                         )
                       );
@@ -2447,7 +2580,7 @@ export default function LoanApplicationPage() {
                   label="Risk Category *"
                   value={form.riskCategory}
                   onChange={(value) => updateField('riskCategory', value)}
-                  options={['Low', 'Medium', 'High']}
+                  options={getLookupOptions(lookupTypes, 'Risk Category')}
                   error={currentStepErrors.riskCategory}
                 />
 
@@ -2457,7 +2590,7 @@ export default function LoanApplicationPage() {
                   onChange={(value) =>
                     updateField('incomeTaxFilerStatus', value)
                   }
-                  options={['Filer', 'Non-Filer']}
+                  options={getLookupOptions(lookupTypes, 'Income Tax Filer Status')}
                   error={currentStepErrors.incomeTaxFilerStatus}
                 />
               </div>
@@ -2606,6 +2739,9 @@ export default function LoanApplicationPage() {
           {/* Step 7: Document Details */}
           {currentStep === 6 && (
             <div className="loan-form-section">
+              {!form.leadId && <p role="status">Enter a Lead ID to load existing customer documents.</p>}
+              {customerDocumentsLoading && <p role="status">Loading customer documents...</p>}
+              {customerDocumentsError && <p role="alert">{customerDocumentsError}</p>}
               <div className="loan-data-table-wrap document-table-wrap">
                 <button
                   type="button"
@@ -2656,6 +2792,9 @@ export default function LoanApplicationPage() {
                               aria-invalid={Boolean(currentStepErrors[`documents.${index}.name`])}
                             >
                               <option value="" />
+                              {getLookupOptions(lookupTypes, 'Document Name').map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
                             </select>
                             <FieldError message={currentStepErrors[`documents.${index}.name`]} />
                           </td>
@@ -3066,9 +3205,10 @@ export default function LoanApplicationPage() {
               type="button"
               className="loan-continue-button"
               onClick={goNext}
+              disabled={isSaving}
               style={{ height: '36px', minWidth: '112px', width: 'auto', padding: '0 14px', gap: '6px', borderRadius: '7px', fontSize: '13px', background: '#368262', borderColor: '#368262' }}
             >
-              {isLastStep ? 'Submit' : 'Continue'}
+              {isSaving ? 'Saving...' : isLastStep ? 'Save and Continue' : 'Continue'}
               <ArrowRight size={14} />
             </button>
           </div>
