@@ -117,6 +117,7 @@ export async function getLookupOptions(lookupTypeCode, signal) {
     return {
       id: option.id ?? option.code ?? `${lookupTypeCode}-${index}`,
       code: option.code ?? "",
+      value: option.name ?? option.code ?? option.description ?? "",
       name,
       description: option.description ?? "",
       status: toDisplayStatus(option.status, option.isActive),

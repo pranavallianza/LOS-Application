@@ -40,7 +40,10 @@ const lookupNamesByField = {
   interestFrequency: ['Interest Calculation Frequency'],
   calculationMode: ['Interest Calculation Mode']
 };
-const supportedEmiValues = ['Arrears', 'Int in Advance'];
+const emiValues = [
+  { value: 'Arrears', aliases: ['arrears'] },
+  { value: 'Int in Advance', aliases: ['intinadvance', 'inadvance'] }
+];
 const lookupLabelsByField = {
   emiFixedDate: 'EMI Fixed Date',
   emi: 'E.M.I.',
@@ -75,20 +78,21 @@ function getLookupOptions(lookupTypes, field) {
       && String(option.isActive).toLowerCase() !== 'false'
       && String(option.status || 'ACTIVE').toUpperCase() === 'ACTIVE')
     .map((option, index) => {
-      const optionValues = [option.name, option.description, option.code].filter(Boolean);
-      const supportedValue = ['emi', 'emiType'].includes(field)
-        ? supportedEmiValues.find((candidate) => optionValues.some((value) => (
-          normalizeLookupValue(value) === normalizeLookupValue(candidate)
+      const optionValues = [option.value, option.name, option.description, option.code];
+      const emiValue = field === 'emi'
+        ? emiValues.find(({ aliases }) => optionValues.some((optionValue) => (
+          aliases.includes(normalizeLookupValue(optionValue))
         )))
         : null;
-      if (['emi', 'emiType'].includes(field) && !supportedValue) return null;
+      if (field === 'emi' && !emiValue) return null;
 
-      const value = supportedValue || option.description || option.name || option.code || '';
+      const value = emiValue?.value || option.value || option.name || option.description || option.code || '';
+      const label = option.label || option.description || option.name || option.code || value;
       return {
         id: option.id ?? option.code ?? `${lookup?.id || field}-${index}`,
         code: option.code ?? '',
-        label: String(value),
-        value: String(value),
+        label: String(label).trim(),
+        value: String(value).trim(),
         displayOrder: Number(option.display_order ?? option.displayOrder ?? index + 1)
       };
     })
@@ -142,7 +146,7 @@ function persistProducts(products) {
 
 function validate(form, products, editingId, lookupOptions) {
   const errors = {};
-  const required = ['productCode', 'productName', 'emiFixedDate', 'minTenure', 'minTenureUnit', 'maxTenure', 'maxTenureUnit', 'minAmount', 'maxAmount', 'penalty', 'daysInYear', 'intBaseMethod', 'interestFrequency', 'calculationMode'];
+  const required = ['productCode', 'productName', 'emiFixedDate', 'emi', 'emiType', 'minTenure', 'minTenureUnit', 'maxTenure', 'maxTenureUnit', 'minAmount', 'maxAmount', 'penalty', 'daysInYear', 'intBaseMethod', 'interestFrequency', 'calculationMode'];
   if (isYesValue(form.penalty)) required.push('penaltyPercent');
   required.forEach((field) => { if (!String(form[field]).trim()) errors[field] = 'This field is required.'; });
   [...Object.keys(lookupNamesByField), 'minTenureUnit', 'maxTenureUnit'].forEach((field) => {
@@ -248,7 +252,7 @@ export default function ProductManagementPage() {
         const requiredTypes = new Map();
         Object.keys(lookupNamesByField).forEach((field) => {
           const lookup = findLookupType(types, field);
-          if (lookup?.code && !getLookupOptions(types, field).length) {
+          if (lookup?.code && (['emi', 'emiType'].includes(field) || !getLookupOptions(types, field).length)) {
             requiredTypes.set(lookup.code, lookup);
           }
         });
@@ -395,8 +399,8 @@ export default function ProductManagementPage() {
     const payload = {
       product_code: record.productCode,
       product_name: record.productName,
-      ...(form.emi.trim() ? { emi: form.emi } : {}),
-      ...(form.emiType.trim() ? { emi_type: form.emiType } : {}),
+      emi: form.emi.trim(),
+      emi_type: form.emiType.trim(),
       min_tenure_months: tenureInMonths(form.minTenure, form.minTenureUnit),
       max_tenure_months: tenureInMonths(form.maxTenure, form.maxTenureUnit),
       min_amount: Number(form.minAmount),
@@ -435,7 +439,7 @@ export default function ProductManagementPage() {
     } catch (error) {
       const message = error.message || 'Unable to save product.';
       const detail = /valid emi type/i.test(message)
-        ? ` Submitted E.M.I. Type: "${form.emiType || '(empty)'}".`
+        ? ` Submitted E.M.I.: "${form.emi || '(empty)'}"; E.M.I. Type: "${form.emiType || '(empty)'}".`
         : '';
       setStatus({ type: 'error', text: `${message}${detail}` });
     } finally {
@@ -564,7 +568,7 @@ export default function ProductManagementPage() {
                   if (field === 'penaltyPercent' && !isYesValue(form.penalty)) return null;
                   const choices = lookupOptions[field] || [];
                   const isLookupField = Object.prototype.hasOwnProperty.call(lookupNamesByField, field);
-                  const isRequired = !['emi', 'emiType'].includes(field);
+                  const isRequired = field !== 'penaltyPercent';
                   const numeric = ['minTenure', 'maxTenure', 'minAmount', 'maxAmount', 'penaltyPercent', 'daysInYear'].includes(field);
                   const longLabel = ['intBaseMethod', 'interestFrequency', 'calculationMode'].includes(field);
                   return (
@@ -594,7 +598,7 @@ export default function ProductManagementPage() {
               </div>
               {lookupLoading && <div className="pm-status info" role="status">Loading dropdown values from lookups…</div>}
               {!lookupLoading && lookupError && <div className="pm-status error" role="alert">Unable to load lookup values: {lookupError}</div>}
-              {!lookupLoading && !lookupError && missingLookupLabels.length > 0 && <div className="pm-status info" role="status">No active compatible lookup options are configured for: {missingLookupLabels.join(', ')}. Add the matching lookup types and valid sub-lookups to use these fields. EMI and E.M.I. Type options must match the API values: {supportedEmiValues.join(', ')}.</div>}
+              {!lookupLoading && !lookupError && missingLookupLabels.length > 0 && <div className="pm-status info" role="status">No active compatible lookup options are configured for: {missingLookupLabels.join(', ')}. Add the matching lookup types and valid sub-lookups to use these fields.</div>}
               <section className="pm-dop" aria-labelledby="pm-dop-title">
                 <div className="pm-dop-heading">
                   <div><h3 id="pm-dop-title">Delegation of Power for Sanction</h3><p>Set increasing sanction limits and the approving authority for each limit.</p></div>
