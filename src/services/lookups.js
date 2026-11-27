@@ -30,8 +30,16 @@ function getRequestHeaders() {
 }
 
 async function requestLookupApi(path, options = {}) {
-  const response = await fetch(`${API_V1_URL}${path}`, {
-    ...options,
+  const { params, ...fetchOptions } = options;
+  const url = new URL(`${API_V1_URL}${path}`, window.location.origin);
+  if (params && typeof params === 'object') {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
+    });
+  }
+
+  const response = await fetch(url.toString(), {
+    ...fetchOptions,
     headers: getRequestHeaders(),
     cache: "no-store",
   });
@@ -72,6 +80,23 @@ function toDisplayStatus(status, isActive = true) {
 //     subLookups: [],
 //   }));
 // }
+
+export async function fetchLookups(params = {}, signal) {
+  const result = await requestLookupApi("/lookups", {
+    method: "GET",
+    params: {
+      search: params.search ?? "",
+      status: params.status ?? "ALL",
+    },
+    signal,
+  });
+
+  if (!Array.isArray(result?.data)) {
+    throw new Error("The lookup service returned an unsupported lookup list.");
+  }
+
+  return result.data;
+}
 
 export async function getLookupTypes(signal) {
   const result = await requestLookupApi("/lookups", {

@@ -20,11 +20,14 @@ import {
 
 import PageHeader from './PageHeader';
 
+import { fetchLookups } from '../services/lookups';
 import {
-  saveEmployee,
-  isEmpIdUnique,
-  isUsernameUnique,
-} from '../services/employeeService';
+  createUser,
+  getBranches,
+  getUserById,
+  updateUser,
+  normalizeUserRecord,
+} from '../services/user_management';
 
 import {
   getMaxDateFor18YearsOld,
@@ -41,40 +44,68 @@ const NAME_MAX_LENGTH = 50;
 const MOBILE_MAX_LENGTH = 13;
 const EMAIL_MAX_LENGTH = 254;
 
-const DESIGNATIONS = [
-  'Branch Manager',
-  'Loan Officer',
-  'Credit Analyst',
-  'Senior Underwriter',
-  'Audit Specialist',
-  'Operations Executive',
-  'Risk Analyst',
-  'System Administrator',
-];
+const LOOKUP_TYPE_MATCHERS = {
+  title: ['title', 'salutation'],
+  gender: ['gender'],
+  designation: ['designation', 'job title', 'position'],
+  userRole: ['100034', 'user role', 'user_role', 'userrole'],
+  systemRole: ['system role', 'system_role'],
+  status: ['user status', 'account status', 'status'],
+};
 
-const USER_ROLES = [
-  'Super Admin',
-  'Bank Admin',
-  'Branch User',
-];
+function getLookupMatch(lookups, matcherKeys = []) {
+  const matchers = matcherKeys.map((item) => String(item).toLowerCase());
+  const scored = (Array.isArray(lookups) ? lookups : [])
+    .map((lookup) => {
+      const haystack = [lookup?.name, lookup?.code, lookup?.lookupCode, lookup?.lookup_code, lookup?.description]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      let score = 0;
+      for (const matcher of matchers) {
+        for (const value of haystack) {
+          if (value === matcher) score = Math.max(score, 3);
+          else if (value.includes(matcher)) {
+            if (matcher === 'status' && (value.includes('marital') || value.includes('kyc'))) continue;
+            score = Math.max(score, 2);
+          }
+        }
+      }
+      return { lookup, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
 
-const SYSTEM_ROLES = [
-  'SUPER_ADMIN',
-  'Maker',
-  'Checker',
-  'Viewer',
-];
+  const matchedLookup = scored[0]?.lookup || null;
+  const subLookups = Array.isArray(matchedLookup?.subLookups)
+    ? matchedLookup.subLookups
+    : Array.isArray(matchedLookup?.sub_lookups)
+      ? matchedLookup.sub_lookups
+      : [];
 
-const BRANCHES = [
-  'Pune',
-  'Mumbai',
-  'Koramangala',
-  'Salt Lake',
-  'Andheri West',
-  'Pimpri',
-  'Indiranagar',
-  'Head Office',
-];
+  return {
+    lookup: matchedLookup,
+    code: matchedLookup?.code || matchedLookup?.lookupCode || matchedLookup?.lookup_code || '',
+    options: subLookups
+      .filter((item) => String(item?.status || 'Active').toLowerCase() === 'active')
+      .map((item) => ({
+        id: item?.id ?? item?.subLookupId ?? item?.sub_lookup_id ?? '',
+        name: item?.name || item?.subLookupName || item?.sub_lookup_name || '',
+        code: item?.code || item?.sub_lookup_code || item?.subLookupCode || '',
+      }))
+      .filter((item) => item.name),
+  };
+}
+
+function findLookupOption(options, value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  return (options || []).find((option) => {
+    const candidates = [option?.name, option?.code, option?.id, option?.branchName, option?.branchCode]
+      .filter((candidate) => candidate !== undefined && candidate !== null)
+      .map((candidate) => String(candidate).trim().toLowerCase());
+    return candidates.includes(normalized);
+  }) || null;
+}
 
 /* =========================================================
    DATE HELPERS
@@ -605,6 +636,9 @@ export default function UserForm({
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const [lookups, setLookups] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
 
   const submittingRef = useRef(false);
   const dobPickerRef = useRef(null);
@@ -637,6 +671,89 @@ export default function UserForm({
     };
   }, [isDobCalendarOpen]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadOptions = async () => {
+      setOptionsLoading(true);
+      try {
+        const [lookupResponse, branchResponse] = await Promise.all([
+          fetchLookups({ search: '', status: 'ALL' }),
+          getBranches(),
+        ]);
+
+        if (cancelled) return;
+        setLookups(Array.isArray(lookupResponse) ? lookupResponse : []);
+        setBranches(Array.isArray(branchResponse) ? branchResponse : []);
+      } catch (error) {
+        if (!cancelled) {
+          setSubmitError(error instanceof Error ? error.message : 'Unable to load form options.');
+        }
+      } finally {
+        if (!cancelled) setOptionsLoading(false);
+      }
+    };
+
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const titleLookup = useMemo(() => getLookupMatch(lookups, LOOKUP_TYPE_MATCHERS.title), [lookups]);
+  const designationLookup = useMemo(() => getLookupMatch(lookups, LOOKUP_TYPE_MATCHERS.designation), [lookups]);
+  const userRoleLookup = useMemo(() => getLookupMatch(lookups, LOOKUP_TYPE_MATCHERS.userRole), [lookups]);
+  const systemRoleLookup = useMemo(() => getLookupMatch(lookups, LOOKUP_TYPE_MATCHERS.systemRole), [lookups]);
+  const statusLookup = useMemo(() => getLookupMatch(lookups, LOOKUP_TYPE_MATCHERS.status), [lookups]);
+  const titleOptions = titleLookup.options;
+  const designationOptions = designationLookup.options;
+  const userRoleOptions = userRoleLookup.options;
+  const systemRoleOptions = systemRoleLookup.options;
+  const statusOptions = statusLookup.options;
+  const branchOptions = useMemo(
+    () =>
+      (Array.isArray(branches) ? branches : [])
+        .map((branch) => ({
+          id: branch?.id ?? branch?.branchId ?? branch?.branch_id ?? '',
+          name: branch?.branchName || branch?.branch_name || '',
+          code: branch?.branchCode || branch?.branch_code || branch?.code || '',
+        }))
+        .filter((branch) => branch.name),
+    [branches],
+  );
+
+  useEffect(() => {
+    if (optionsLoading) return;
+
+    setForm((current) => {
+      const resolveValue = (options, value) => {
+        if (!value) return value;
+        const match = findLookupOption(options, value);
+        if (match?.name) return match.name;
+        return options.length > 0 ? '' : value;
+      };
+      const resolveBranch = (value) => {
+        if (!value) return value;
+        const match = findLookupOption(branchOptions, value);
+        if (match?.name) return match.name;
+        return branchOptions.length > 0 ? '' : value;
+      };
+
+      const next = {
+        ...current,
+        title: resolveValue(titleOptions, current.title),
+        designation: resolveValue(designationOptions, current.designation),
+        userRole: resolveValue(userRoleOptions, current.userRole),
+        systemRole: resolveValue(systemRoleOptions, current.systemRole),
+        status: resolveValue(statusOptions, current.status),
+        loginBranch: current.allowMultiBranch ? current.loginBranch : resolveBranch(current.loginBranch),
+      };
+
+      const changed = Object.keys(next).some((key) => next[key] !== current[key]);
+      return changed ? next : current;
+    });
+  }, [optionsLoading, titleOptions, designationOptions, userRoleOptions, systemRoleOptions, statusOptions, branchOptions]);
+
   /* =========================================================
      FIELD VALIDATION
   ========================================================= */
@@ -657,16 +774,14 @@ export default function UserForm({
           !/^[a-zA-Z0-9_-]+$/.test(String(value).trim())
         ) {
           err = 'Emp ID can only contain letters, numbers, hyphens, and underscores.';
-        } else if (
-          !isEmpIdUnique(String(value).trim(), initialData?.id)
-        ) {
-          err = 'This Emp ID is already in use by another employee.';
         }
         break;
 
       case 'title':
-        if (!value || !['Mr.', 'Mrs.', 'Ms.'].includes(value)) {
+        if (!String(value ?? '').trim()) {
           err = 'Please select a Title.';
+        } else if (titleOptions.length > 0 && !findLookupOption(titleOptions, value)) {
+          err = 'Please select a valid Title.';
         }
         break;
 
@@ -748,10 +863,6 @@ export default function UserForm({
           !/^[a-zA-Z0-9._-]+$/.test(String(value).trim())
         ) {
           err = 'Username contains unsupported characters.';
-        } else if (
-          !isUsernameUnique(String(value).trim(), initialData?.id)
-        ) {
-          err = 'This User Name is already taken.';
         }
         break;
 
@@ -790,35 +901,44 @@ export default function UserForm({
         break;
 
       case 'designation':
-        if (!DESIGNATIONS.includes(value)) {
+        if (!String(value ?? '').trim()) {
           err = 'Please select a Designation.';
+        } else if (designationOptions.length > 0 && !findLookupOption(designationOptions, value)) {
+          err = 'Please select a valid Designation.';
         }
         break;
 
       case 'userRole':
-        if (!USER_ROLES.includes(value)) {
+        if (!String(value ?? '').trim()) {
+          err = 'Please select a valid User Role.';
+        } else if (userRoleOptions.length > 0 && !findLookupOption(userRoleOptions, value)) {
           err = 'Please select a valid User Role.';
         }
         break;
 
       case 'systemRole':
-        if (!SYSTEM_ROLES.includes(value)) {
+        if (!String(value ?? '').trim()) {
           err = 'Please select a System Role.';
+        } else if (systemRoleOptions.length > 0 && !findLookupOption(systemRoleOptions, value)) {
+          err = 'Please select a valid System Role.';
         }
         break;
 
       case 'status':
-        if (!['Active', 'Inactive', 'Suspended'].includes(value)) {
+        if (!String(value ?? '').trim()) {
           err = 'Please select an Account Status.';
+        } else if (statusOptions.length > 0 && !findLookupOption(statusOptions, value)) {
+          err = 'Please select a valid Account Status.';
         }
         break;
 
       case 'loginBranch':
-        if (
-          !values.allowMultiBranch &&
-          !BRANCHES.includes(value)
-        ) {
-          err = 'Please select a Login Branch.';
+        if (!values.allowMultiBranch) {
+          if (!String(value ?? '').trim()) {
+            err = 'Please select a Login Branch.';
+          } else if (branchOptions.length > 0 && !findLookupOption(branchOptions, value)) {
+            err = 'Please select a valid Login Branch.';
+          }
         }
         break;
 
@@ -1252,167 +1372,87 @@ export default function UserForm({
     submittingRef.current = true;
     setSubmitting(true);
 
-    const fullName = [
-      form.firstName,
-      form.middleName,
-      form.lastName,
-    ]
+    const fullName = [form.firstName, form.middleName, form.lastName]
       .map((name) => String(name ?? '').trim())
       .filter(Boolean)
       .join(' ');
 
-    const branchValue = form.allowMultiBranch
-      ? 'Multiple Branches'
-      : form.loginBranch || 'Head Office';
-
     const toApiTime = (timeValue) => {
-      const match = String(timeValue).match(
-        /^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i
-      );
-
-      if (!match) return timeValue;
-
-      let hours = Number(match[1]);
-
-      const period = match[3]?.toUpperCase();
-
-      if (period === 'PM' && hours < 12) {
-        hours += 12;
-      }
-
-      if (period === 'AM' && hours === 12) {
-        hours = 0;
-      }
-
-      return `${String(hours).padStart(2, '0')}:${match[2]}:00`;
+      const normalized = toTimePickerValue(timeValue);
+      if (normalized) return `${normalized}:00`;
+      const match = String(timeValue ?? '').match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      if (!match) return String(timeValue ?? '');
+      return `${String(Number(match[1])).padStart(2, '0')}:${match[2]}:${match[3] || '00'}`;
     };
 
-    const employeeRecord = {
-      ...(initialData || {}),
+    const selectedTitle = findLookupOption(titleOptions, form.title);
+    const selectedDesignation = findLookupOption(designationOptions, form.designation);
+    const selectedUserRole = findLookupOption(userRoleOptions, form.userRole);
+    const selectedSystemRole = findLookupOption(systemRoleOptions, form.systemRole);
+    const selectedStatus = findLookupOption(statusOptions, form.status);
+    const selectedBranch = findLookupOption(branchOptions, form.loginBranch);
 
-      empNo: String(form.empNo).trim(),
-      employeeId: String(form.empNo).trim(),
+    const statusValue = String(selectedStatus?.name || form.status || '').toUpperCase();
+    const genderValue = String(form.title || selectedTitle?.name || '').toLowerCase().startsWith('mr')
+      ? 'MALE'
+      : 'FEMALE';
 
-      title: form.title,
+    const bankCode =
+      process.env.NEXT_PUBLIC_BANK_CODE?.trim() ||
+      (typeof window !== 'undefined'
+        ? (() => {
+            try {
+              const authData = JSON.parse(window.localStorage.getItem('authData') || '{}');
+              return authData?.bankCode || authData?.bank_code || authData?.user?.bankCode || authData?.user?.bank_code || 'sbi001';
+            } catch {
+              return 'sbi001';
+            }
+          })()
+        : 'sbi001');
 
-      name: fullName,
-      fullName,
-
-      firstName: String(form.firstName).trim(),
-      middleName: String(form.middleName || '').trim(),
-      lastName: String(form.lastName).trim(),
-
-      userName: String(form.userName).trim(),
-
-      mobile: normalizeIndianMobile(form.mobile),
-
+    const payload = {
+      bank_code: bankCode,
+      emp_no: String(form.empNo).trim(),
+      username: String(form.userName).trim(),
+      title: selectedTitle?.name || form.title,
+      first_name: String(form.firstName).trim(),
+      middle_name: String(form.middleName || '').trim(),
+      last_name: String(form.lastName).trim(),
       email: String(form.email).trim(),
-
-      dateOfBirth: form.dateOfBirth,
-
-      designation: form.designation,
-      userRole: form.userRole,
-      role: form.userRole,
-      systemRole: form.systemRole,
-      status: form.status,
-
-      allow2FA: form.allow2FA,
-      twoFAEnabled: form.allow2FA ? 'Y' : 'N',
-
-      allowMultiBranch: form.allowMultiBranch,
-      multiBranchAccess: form.allowMultiBranch ? 'Y' : 'N',
-
-      loginBranch: branchValue,
-      branch: branchValue,
-
-      allowLoginOnHolidays: form.allowLoginOnHolidays,
-      loginOnHolidays: form.allowLoginOnHolidays ? 'Y' : 'N',
-
-      sessionTimeout: Number(form.sessionTimeout),
-      idleTimeout: Number(form.sessionTimeout),
-      inactiveSessionTimeout: String(form.sessionTimeout),
-
-      badLogins: Number(form.badLogins),
-
-      loginTime: form.loginTime,
-      logoutTime: form.logoutTime,
+      mobile: normalizeIndianMobile(form.mobile),
+      dob: form.dateOfBirth,
+      gender: genderValue,
+      designation: selectedDesignation?.name || form.designation,
+      role_id: selectedUserRole?.id ? Number(selectedUserRole.id) || selectedUserRole.id : undefined,
+      system_role: selectedSystemRole?.id ? Number(selectedSystemRole.id) || selectedSystemRole.id : (selectedSystemRole?.name || form.systemRole),
+      login_branch_id: selectedBranch?.id ? Number(selectedBranch.id) || selectedBranch.id : undefined,
+      login_time: toApiTime(form.loginTime),
+      logout_time: toApiTime(form.logoutTime),
+      inactive_session_timeout: Number(form.sessionTimeout),
+      status: statusValue || 'ACTIVE'
+     
     };
+
+    Object.keys(payload).forEach((key) => {
+      if (payload[key] === undefined || payload[key] === '') delete payload[key];
+    });
 
     try {
-      if (!isEdit) {
-        const {
-          createUser,
-          USER_ORGANIZATION_CODE,
-          USER_ORGANIZATION_ID,
-          USER_ORGANIZATION_NAME,
-        } = await import('../services/leadService');
-        const userPayload = {
-          empNo: employeeRecord.empNo,
-
-          userCode: `USR-${employeeRecord.empNo.replace(
-            /^EMP-?/i,
-            ''
-          )}`,
-
-          username: employeeRecord.userName.toLowerCase(),
-
+      if (isEdit) {
+        const userId = initialData?.id ?? initialData?.userId ?? initialData?.user_id;
+        if (form.password) {
+          payload.password = form.password;
+          payload.confirm_password = form.confirmPassword || form.password;
+        }
+        await updateUser(userId, payload);
+      } else {
+        await createUser({
+          ...payload,
           password: form.password,
-
-          firstName: employeeRecord.firstName,
-          middleName: employeeRecord.middleName,
-          lastName: employeeRecord.lastName,
-
-          email: employeeRecord.email,
-          mobile: employeeRecord.mobile,
-
-          gender:
-            employeeRecord.title === 'Mr.'
-              ? 'MALE'
-              : 'FEMALE',
-
-          dob: employeeRecord.dateOfBirth,
-
-          designation: employeeRecord.designation,
-
-          userType: 'STAFF',
-
-          role: employeeRecord.userRole.toUpperCase(),
-
-          status:
-            employeeRecord.status === 'Active'
-              ? 'OPERATIVE'
-              : employeeRecord.status === 'Inactive'
-                ? 'INOPERATIVE'
-                : 'SUSPENDED',
-
-          twoFaEnabled: employeeRecord.allow2FA,
-
-          multiBranchAccess: employeeRecord.allowMultiBranch,
-
-          branchId: 1,
-          branchName: 'Bank Of India Main Branch',
-
-          organizationId: USER_ORGANIZATION_ID,
-          organizationCode: USER_ORGANIZATION_CODE,
-          organizationName: USER_ORGANIZATION_NAME,
-
-          loginOnHolidays: employeeRecord.allowLoginOnHolidays,
-
-          loginTime: toApiTime(employeeRecord.loginTime),
-          logoutTime: toApiTime(employeeRecord.logoutTime),
-
-          inactiveSessionTimeout: employeeRecord.sessionTimeout,
-        };
-
-        console.log(
-          'Creating user with payload:',
-          userPayload
-        );
-
-        await createUser(userPayload);
+          confirm_password: form.confirmPassword,
+          generate_token: true,
+        });
       }
-
-      saveEmployee(employeeRecord);
 
       if (!isEdit) {
         setForm((currentForm) => ({
@@ -1426,18 +1466,14 @@ export default function UserForm({
         window.sessionStorage.setItem(
           'los_user_notification',
           isEdit
-            ? `Employee ${fullName} (${employeeRecord.empNo}) updated successfully.`
-            : `New user ${fullName} (${employeeRecord.empNo}) created successfully.`
+            ? `Employee ${fullName} (${String(form.empNo).trim()}) updated successfully.`
+            : `New user ${fullName} (${String(form.empNo).trim()}) created successfully.`,
         );
       }
 
       router.push('/user_management');
     } catch (error) {
-      setSubmitError(
-        error instanceof Error
-          ? error.message
-          : 'Unable to save the user. Please try again.'
-      );
+      setSubmitError(error instanceof Error ? error.message : 'Unable to save the user. Please try again.');
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -1536,10 +1572,12 @@ export default function UserForm({
                 onBlur={handleBlur}
                 aria-invalid={Boolean(errors.title)}
               >
-                <option value="">Select</option>
-                <option value="Mr.">Mr.</option>
-                <option value="Mrs.">Mrs.</option>
-                <option value="Ms.">Ms.</option>
+                <option value="">{optionsLoading ? 'Loading...' : `Select ${titleLookup.code || 'Title'}`}</option>
+                {titleOptions.map((option) => (
+                  <option key={option.id || option.code || option.name} value={option.name}>
+                    {option.name}
+                  </option>
+                ))}
               </select>
 
               {errors.title && (
@@ -1921,11 +1959,11 @@ export default function UserForm({
                 onChange={handleChange}
                 onBlur={handleBlur}
               >
-                <option value="">Select Designation</option>
+                <option value="">{optionsLoading ? 'Loading...' : `Select ${designationLookup.code || 'Designation'}`}</option>
 
-                {DESIGNATIONS.map((designation) => (
-                  <option key={designation} value={designation}>
-                    {designation}
+                {designationOptions.map((option) => (
+                  <option key={option.id || option.code || option.name} value={option.name}>
+                    {option.name}
                   </option>
                 ))}
               </select>
@@ -1950,10 +1988,12 @@ export default function UserForm({
                 onChange={handleChange}
                 onBlur={handleBlur}
               >
-                <option value="">Select User Role</option>
-                <option value="Super Admin">Super Admin User</option>
-                <option value="Bank Admin">Bank Admin User</option>
-                <option value="Branch User">Branch User</option>
+                <option value="">{optionsLoading ? 'Loading...' : `Select ${userRoleLookup.code || 'User Role'}`}</option>
+                {userRoleOptions.map((option) => (
+                  <option key={option.id || option.code || option.name} value={option.name}>
+                    {option.name}
+                  </option>
+                ))}
               </select>
 
               {errors.userRole && (
@@ -1976,11 +2016,12 @@ export default function UserForm({
                 onChange={handleChange}
                 onBlur={handleBlur}
               >
-                <option value="">Select System Role</option>
-                <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-                <option value="Maker">Maker</option>
-                <option value="Checker">Checker</option>
-                <option value="Viewer">Viewer</option>
+                <option value="">{optionsLoading ? 'Loading...' : `Select ${systemRoleLookup.code || 'System Role'}`}</option>
+                {systemRoleOptions.map((option) => (
+                  <option key={option.id || option.code || option.name} value={option.name}>
+                    {option.name}
+                  </option>
+                ))}
               </select>
 
               {errors.systemRole && (
@@ -2011,12 +2052,12 @@ export default function UserForm({
                 <option value="">
                   {form.allowMultiBranch
                     ? 'All branches permitted'
-                    : 'Select Branch'}
+                    : optionsLoading ? 'Loading...' : 'Select Branch'}
                 </option>
 
-                {BRANCHES.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
+                {branchOptions.map((branch) => (
+                  <option key={branch.id || branch.code || branch.name} value={branch.name}>
+                    {branch.name}
                   </option>
                 ))}
               </select>
@@ -2041,9 +2082,12 @@ export default function UserForm({
                 onChange={handleChange}
                 onBlur={handleBlur}
               >
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Suspended">Suspended</option>
+                <option value="">{optionsLoading ? 'Loading...' : `Select ${statusLookup.code || 'Status'}`}</option>
+                {statusOptions.map((option) => (
+                  <option key={option.id || option.code || option.name} value={option.name}>
+                    {option.name}
+                  </option>
+                ))}
               </select>
 
               {errors.status && (

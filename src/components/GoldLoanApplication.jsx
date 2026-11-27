@@ -16,6 +16,59 @@ const currencyFormatter = new Intl.NumberFormat('en-IN', {
 });
 export const GOLD_LOAN_STORAGE_KEY = 'los.goldLoanApplications';
 
+const getCurrentDateString = () => {
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+
+const GOLD_ACCOUNT_STATUSES = ['Operative', 'Inoperative'];
+
+function normalizeGoldAccountStatus(value) {
+  const status = String(value ?? '').trim().toLowerCase();
+  if (status === 'operative' || status === 'active') return 'Operative';
+  if (status === 'inoperative' || status === 'pending' || status === 'closed') return 'Inoperative';
+  return '';
+}
+
+function calculateGoldLoanInstalmentAmount(form) {
+  const principal = Number(form.sanctionLimit);
+  const tenureMonths = Number(form.tenureMonths);
+  const annualRate = Number(form.interestRate);
+  const instalments = Number(form.instalments);
+  const frequencyMonths = {
+    Monthly: 1,
+    Quarterly: 3,
+    'Half Yearly': 6,
+  }[form.interestPayment];
+
+  if (
+    !Number.isFinite(principal)
+    || principal <= 0
+    || !Number.isInteger(tenureMonths)
+    || tenureMonths <= 0
+    || !Number.isFinite(annualRate)
+    || annualRate < 0
+    || annualRate > 100
+    || !Number.isInteger(instalments)
+    || instalments <= 0
+    || instalments > tenureMonths
+  ) return '';
+
+  if (form.interestPayment === 'Maturity') {
+    return (principal * (1 + annualRate / 1200) ** tenureMonths).toFixed(2);
+  }
+  if (!frequencyMonths) return '';
+
+  const installmentPeriodMonths = tenureMonths / instalments;
+  const ratePerFrequency = annualRate / (100 * (12 / frequencyMonths));
+  const ratePerInstalment = (1 + ratePerFrequency) ** (installmentPeriodMonths / frequencyMonths) - 1;
+  const payment = ratePerInstalment === 0
+    ? principal / instalments
+    : (principal * ratePerInstalment) / (1 - (1 + ratePerInstalment) ** -instalments);
+
+  return Number.isFinite(payment) ? payment.toFixed(2) : '';
+}
+
 function getLimitTotal(inventoryItems) {
   const total = inventoryItems.reduce((sum, item) => {
     const text = String(item.limit ?? '').trim();
@@ -159,9 +212,17 @@ export function createApplicationForm(application) {
     },
   };
 
+  mergedForm.accountStatus = normalizeGoldAccountStatus(mergedForm.accountStatus);
+  if (!isValidDate(mergedForm.effectiveDate)) {
+    mergedForm.effectiveDate = getCurrentDateString();
+  }
+  if (!isValidDate(mergedForm.sanctionedDate) || mergedForm.sanctionedDate < mergedForm.effectiveDate) {
+    mergedForm.sanctionedDate = mergedForm.effectiveDate;
+  }
   mergedForm.repaymentType = getGoldLoanRepaymentType(mergedForm);
   mergedForm.expiryDate = calculateGoldLoanExpiryDate(mergedForm);
   mergedForm.repaymentStartDate = calculateGoldLoanRepaymentStartDate(mergedForm);
+  mergedForm.instalmentAmount = calculateGoldLoanInstalmentAmount(mergedForm);
 
   return mergedForm;
 }
@@ -319,7 +380,7 @@ const MAX_BANK_ACCOUNT_LENGTH = 18;
 
 const createInitialForm = () => ({
   loanAccountNumber: '',
-  effectiveDate: '',
+  effectiveDate: getCurrentDateString(),
   customerId: '',
   branch: '',
   title: '',
@@ -352,7 +413,7 @@ const createInitialForm = () => ({
   instalmentAmount: '',
   tenureMonths: '',
   sanctionAuthority: '',
-  sanctionedDate: '',
+  sanctionedDate: getCurrentDateString(),
   repaymentType: '',
   repaymentStartDate: '',
   accountClosure: '',
@@ -630,7 +691,7 @@ function validateStep(stepIndex, values) {
   const errors = {};
 
   if (stepIndex === 0) {
-    validateIdentifier('loanAccountNumber', values.loanAccountNumber, 'Loan account number', errors);
+    validateIdentifier('loanAccountNumber', values.loanAccountNumber, 'Loan account number', errors, false);
     validateDate('effectiveDate', values.effectiveDate, 'Effective date', errors, true);
     if (!String(values.customerId ?? '').trim()) errors.customerId = 'Customer ID is required.';
     validateTextLength('branch', values.branch, 'Branch', errors, false, 2, 50);
@@ -647,7 +708,9 @@ function validateStep(stepIndex, values) {
       && isValidDate(values.lastTransactionDate) && values.lastTransactionDate < values.effectiveDate) {
       errors.lastTransactionDate = 'Last transaction date cannot precede the effective date.';
     }
-    if (!String(values.accountStatus ?? '').trim()) errors.accountStatus = 'Account status is required.';
+    if (!GOLD_ACCOUNT_STATUSES.includes(values.accountStatus)) {
+      errors.accountStatus = 'Select a valid account status.';
+    }
     if (!String(values.modeOfOperation ?? '').trim()) {
       errors.modeOfOperation = 'Mode of operation is required.';
     }
@@ -698,6 +761,9 @@ function validateStep(stepIndex, values) {
     }
     if (!['Maturity', 'Monthly', 'Quarterly', 'Half Yearly'].includes(values.interestPayment)) {
       errors.interestPayment = 'Select an interest payment frequency.';
+    }
+    if (values.interestPayment === 'Maturity' && Number(values.instalments) !== 1) {
+      errors.instalments = 'Maturity payment requires exactly one instalment.';
     }
     if (!['Yes', 'No'].includes(values.accountClosure)) {
       errors.accountClosure = 'Select Yes or No for account closure.';
@@ -921,6 +987,7 @@ function LoanField({
           id={id}
           value={value}
           onChange={(event) => handleValueChange(event.target.value)}
+          disabled={readOnly}
           aria-invalid={Boolean(displayedError)}
           aria-describedby={displayedError ? `${id}-error` : undefined}
           required={required}
@@ -937,6 +1004,7 @@ function LoanField({
           value={value}
           onChange={handleValueChange}
           required={required}
+          disabled={readOnly}
           invalid={Boolean(displayedError)}
           popupPlacement="side"
         />
@@ -1714,6 +1782,7 @@ export function LoanApplicationFormPage({
   application,
   onSave,
   onCreate,
+  readOnly = false,
   backLabel = 'Loan Dashboard',
 }) {
   const router = useRouter();
@@ -1788,11 +1857,15 @@ export function LoanApplicationFormPage({
   }, [partyToDelete]);
 
   const updateForm = (nextForm, fieldKeys = [], stepIndex = currentStep) => {
-    setForm(nextForm);
+    const formWithCalculatedInstalment = {
+      ...nextForm,
+      instalmentAmount: calculateGoldLoanInstalmentAmount(nextForm),
+    };
+    setForm(formWithCalculatedInstalment);
     setIsFormDirty(true);
     setShowFrontendSuccess(false);
     if (!fieldKeys.length) return;
-    const stepErrors = validateStep(stepIndex, nextForm);
+    const stepErrors = validateStep(stepIndex, formWithCalculatedInstalment);
     setValidationErrors((previousErrors) => {
       const nextErrors = { ...previousErrors };
       fieldKeys.forEach((key) => {
@@ -1812,6 +1885,15 @@ export function LoanApplicationFormPage({
       if (String(form.instalments ?? '').trim() || validationErrors.instalments) {
         fieldKeys.push('instalments');
       }
+    }
+
+    if (field === 'interestPayment' && value === 'Maturity') {
+      nextForm.instalments = '1';
+      fieldKeys.push('instalments');
+    }
+
+    if (['sanctionLimit', 'tenureMonths', 'interestRate', 'interestPayment', 'instalments'].includes(field)) {
+      fieldKeys.push('instalmentAmount');
     }
 
     if (field === 'emi') {
@@ -1844,7 +1926,16 @@ export function LoanApplicationFormPage({
     }, [`relatedParties.${partyId}.${field}`], 5);
   };
 
+  const isRelatedPartyComplete = (party) => {
+    const requiredFields = ['nameType', 'customerNo', 'salutation', 'firstName', 'lastName'];
+    if (!requiredFields.every((field) => String(party[field] ?? '').trim())) return false;
+    return Object.keys(validateStep(5, { ...form, relatedParties: [party] })).length === 0;
+  };
+  const canAddRelatedParty = form.relatedParties.length === 0
+    || form.relatedParties.every(isRelatedPartyComplete);
+
   const addRelatedParty = () => {
+    if (!canAddRelatedParty) return;
     nextPartyId.current += 1;
     updateForm({
       ...form,
@@ -1894,6 +1985,11 @@ export function LoanApplicationFormPage({
   };
 
   const goToNextStep = () => {
+    if (readOnly) {
+      setCurrentStep((step) => Math.min(step + 1, steps.length - 1));
+      setValidationErrors({});
+      return;
+    }
     const errors = validateStep(currentStep, form);
     setValidationErrors(errors);
     if (Object.keys(errors).length === 0) {
@@ -1912,6 +2008,7 @@ export function LoanApplicationFormPage({
 
   const handleSubmit = (event) => {
     event.preventDefault();
+    if (readOnly) return;
     if (isSubmitting) return;
     setHasAttemptedSubmit(true);
 
@@ -2084,6 +2181,7 @@ export function LoanApplicationFormPage({
     };
     const prefix = `security.inventoryItems.${index}.`;
     const fieldKeys = [`${prefix}${field}`];
+    if (limitAvailable !== form.sanctionLimit) fieldKeys.push('instalmentAmount');
     if (limitAvailable || validationErrors['security.limitAvailable']) {
       fieldKeys.push('security.limitAvailable');
     }
@@ -2154,6 +2252,10 @@ export function LoanApplicationFormPage({
     const nextForm = {
       ...form,
       sanctionLimit: limitAvailable,
+      instalmentAmount: calculateGoldLoanInstalmentAmount({
+        ...form,
+        sanctionLimit: limitAvailable,
+      }),
       charges: { ...form.charges, sanctionLimit: limitAvailable },
       security: {
         ...form.security,
@@ -2168,6 +2270,7 @@ export function LoanApplicationFormPage({
       const nextErrors = Object.fromEntries(
         Object.entries(errors).filter(([key]) => !key.startsWith('security.inventoryItems.')),
       );
+      delete nextErrors.instalmentAmount;
       if (limitAvailable || !errors['security.limitAvailable']) {
         delete nextErrors['security.limitAvailable'];
       }
@@ -2176,6 +2279,11 @@ export function LoanApplicationFormPage({
   };
 
   const navigateToStep = (targetStep) => {
+    if (readOnly) {
+      setCurrentStep(targetStep);
+      setValidationErrors({});
+      return;
+    }
     if (targetStep <= currentStep) {
       setCurrentStep(targetStep);
       setValidationErrors({});
@@ -2221,7 +2329,7 @@ export function LoanApplicationFormPage({
         <div className="gold-page-heading">
           <PageHeader
             className="gold-page-title"
-            title={isEditMode ? 'Edit Gold Loan Application' : 'Gold Loan Application'}
+            title={readOnly ? 'View Gold Loan Application' : isEditMode ? 'Edit Gold Loan Application' : 'Gold Loan Application'}
             description={isEditMode ? `Application ID: ${getApplicationId(application)}` : undefined}
           />
           <button
@@ -2278,6 +2386,7 @@ export function LoanApplicationFormPage({
           {saveError && <div className="bank-master-alert" role="alert">{saveError}</div>}
 
           <form onSubmit={handleSubmit} noValidate>
+            <fieldset className="loan-form-readonly-fieldset" disabled={readOnly}>
             {currentStep === 0 && (
               <div className="loan-form-section">
                 <div className="loan-form-section-inner gold-borrower-fields">
@@ -2292,7 +2401,6 @@ export function LoanApplicationFormPage({
                       maxLength={MAX_TEXT_LENGTH}
                       strictCode
                       onInvalidCodeInput={() => invalidCodeInput('loanAccountNumber')}
-                      required
                     />
                     <LoanField
                       id="customerId"
@@ -2309,6 +2417,7 @@ export function LoanApplicationFormPage({
                       value={form.effectiveDate}
                       onChange={(value) => updateField('effectiveDate', value)}
                       error={validationErrors.effectiveDate}
+                      readOnly
                       required
                     />
                     <LoanField
@@ -2316,7 +2425,7 @@ export function LoanApplicationFormPage({
                       label="Account Status"
                       value={form.accountStatus}
                       onChange={(value) => updateField('accountStatus', value)}
-                      options={['Active', 'Pending', 'Closed'].map((value) => ({ value, label: value }))}
+                      options={GOLD_ACCOUNT_STATUSES.map((value) => ({ value, label: value }))}
                       error={validationErrors.accountStatus}
                       required
                     />
@@ -2446,7 +2555,12 @@ export function LoanApplicationFormPage({
                 <div className="panel-heading">
                   <div>
                   </div>
-                  <button className="secondary-button" type="button" onClick={addRelatedParty}>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={addRelatedParty}
+                    disabled={!canAddRelatedParty}
+                  >
                     <Plus size={16} aria-hidden="true" />
                     Add Related Party
                   </button>
@@ -2592,7 +2706,7 @@ export function LoanApplicationFormPage({
                   <div className="loan-form-grid gold-standard-width-grid gold-form-row">
                     <LoanField id="sanctionAuthority" label="Sanction Authority" value={form.sanctionAuthority} onChange={(value) => updateField('sanctionAuthority', value)} error={validationErrors.sanctionAuthority} maxLength={MAX_NAME_LENGTH} onInvalidLengthInput={() => invalidLengthInput('sanctionAuthority', 'Sanction authority', MAX_NAME_LENGTH)} required />
                     <LoanField id="instalments" label="No. of Instalments" type="number" min="1" max={form.tenureMonths || 600} step="1" value={form.instalments} onChange={(value) => updateField('instalments', value)} error={validationErrors.instalments} required />
-                    <LoanField id="instalmentAmount" label="Instalment Amount (Rs.)" type="number" min="0.01" step="any" value={form.instalmentAmount} onChange={(value) => updateField('instalmentAmount', value)} error={validationErrors.instalmentAmount} required />
+                    <LoanField id="instalmentAmount" label="Instalment Amount (Rs.)" type="number" min="0.01" step="any" value={form.instalmentAmount} error={validationErrors.instalmentAmount} readOnly required />
                     <LoanField id="emi" label="EMI (Y/N)" value={form.emi} onChange={(value) => updateField('emi', value)} options={yesNoOptions} error={validationErrors.emi} required />
                   </div>
                   <div className="loan-form-grid gold-standard-width-grid gold-form-row">
@@ -2606,10 +2720,10 @@ export function LoanApplicationFormPage({
                       readOnly={form.emi === 'No'}
                       required
                     />
-                    <LoanField id="expiryDate" label="Expiry Date" type="date" value={form.expiryDate} onChange={(value) => updateField('expiryDate', value)} error={validationErrors.expiryDate} readOnly required />
                     {shouldShowRepaymentStartDate(form) && (
                       <LoanField id="repaymentStartDate" label="Repayment Start Date" type="date" value={form.repaymentStartDate} onChange={(value) => updateField('repaymentStartDate', value)} error={validationErrors.repaymentStartDate} readOnly required />
                     )}
+                    <LoanField id="expiryDate" label="Expiry Date" type="date" value={form.expiryDate} onChange={(value) => updateField('expiryDate', value)} error={validationErrors.expiryDate} readOnly required />
                     <LoanField
                       id="customerSourced"
                       label="Customer Sourced"
@@ -2847,9 +2961,10 @@ export function LoanApplicationFormPage({
               </div>
             )}
 
+            </fieldset>
             <div className="loan-step-actions">
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                <button className="loan-secondary-btn" type="button" onClick={handleCancel}>Cancel</button>
+                <button className="loan-secondary-btn" type="button" onClick={handleCancel}>{readOnly ? 'Back' : 'Cancel'}</button>
                 {currentStep > 0 && (
                   <button className="loan-secondary-btn" type="button" onClick={goToPreviousStep}>
                     <ArrowLeft size={16} aria-hidden="true" />
@@ -2862,7 +2977,7 @@ export function LoanApplicationFormPage({
                   Next <ArrowRight size={16} aria-hidden="true" />
                 </button>
               ) : (
-                <button className="loan-primary-btn" type="submit" disabled={isSubmitting}>
+                <button className="loan-primary-btn" type="submit" disabled={isSubmitting || readOnly}>
                   {isSubmitting ? 'Saving...' : isEditMode ? 'Save Changes' : 'Submit'}
                   <Check size={16} aria-hidden="true" />
                 </button>
@@ -2907,6 +3022,13 @@ export function LoanApplicationFormPage({
           </div>
         )}
         <style jsx>{`
+          .loan-form-readonly-fieldset {
+            min-width: 0;
+            margin: 0;
+            padding: 0;
+            border: 0;
+          }
+
           .loan-application-shell {
             min-width: 0;
             margin-top: -15px;

@@ -18,7 +18,7 @@ import AppShell from '../../components/AppShell';
 import Card from '../../components/Card';
 import PageHeader from '../../components/PageHeader';
 import { PermissionGate, useAccessControl } from '../../components/AccessControl';
-import { getUsers } from '../../services/leadService';
+import { getUsers } from '../../services/user_management';
 import {
   PERMISSION_MODULES,
   readStoredRoles,

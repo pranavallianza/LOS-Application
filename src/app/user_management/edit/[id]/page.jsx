@@ -1,12 +1,13 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { AlertCircle, ArrowLeft } from 'lucide-react';
+
 import AppShell from '../../../../components/AppShell';
 import UserForm from '../../../../components/UserForm';
 import Card from '../../../../components/Card';
-import { getEmployeeById } from '../../../../services/employeeService';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { getUserById, normalizeUserRecord } from '../../../../services/user_management';
 
 export default function EditUserPage() {
   const router = useRouter();
@@ -15,34 +16,33 @@ export default function EditUserPage() {
 
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (resolvedId) {
-      let emp = null;
-      try {
-        const storedRecord = window.sessionStorage.getItem('los_user_management_edit_record');
-        if (storedRecord) {
-          const { id, employee } = JSON.parse(storedRecord);
-          const requestedId = String(resolvedId).toLowerCase();
-          const storedId = String(id || '').toLowerCase();
-          const employeeIds = [
-            employee?.id,
-            employee?.empNo,
-            employee?.employeeId,
-          ].map((value) => String(value || '').toLowerCase());
-          if (storedId === requestedId || employeeIds.includes(requestedId)) {
-            emp = employee;
-          }
-        }
-      } catch {
-        emp = null;
+    let cancelled = false;
+
+    const loadEmployee = async () => {
+      if (!resolvedId) {
+        setLoading(false);
+        return;
       }
-      if (!emp) emp = getEmployeeById(resolvedId);
-      setEmployee(emp);
-      setLoading(false);
-    } else {
-      setLoading(false);
-    }
+
+      try {
+        const user = await getUserById(resolvedId);
+        if (!cancelled) setEmployee(normalizeUserRecord(user || {}));
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : 'Unable to load user details.');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadEmployee();
+    return () => {
+      cancelled = true;
+    };
   }, [resolvedId]);
 
   if (loading) {
@@ -55,7 +55,7 @@ export default function EditUserPage() {
     );
   }
 
-  if (!employee) {
+  if (error || !employee) {
     return (
       <AppShell title="Employee Not Found">
         <Card style={{ padding: '36px', textAlign: 'center', maxWidth: '560px', margin: '40px auto' }}>
@@ -77,7 +77,7 @@ export default function EditUserPage() {
             Employee Record Not Found
           </h2>
           <p style={{ color: '#7a8e91', fontSize: '13px', margin: '0 0 24px' }}>
-            The requested employee identifier could not be located in the directory.
+            {error || 'The requested employee identifier could not be located in the directory.'}
           </p>
           <button
             type="button"

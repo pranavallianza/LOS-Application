@@ -7,13 +7,13 @@ import AppShell from './AppShell';
 import Card from './Card';
 import PageHeader from './PageHeader';
 import {
-  GoldLoanApplicationView,
   LoanApplicationFormPage,
   getApplicationId,
   isGoldLoanApplication,
   persistGoldLoanApplication,
   readSavedGoldLoanApplications,
 } from './GoldLoanApplication';
+import GoldLoanApplicationView from './GoldLoanApplicationView';
 import { api } from '../services/api';
 
 export default function GoldLoanApplicationRecord({ id, mode }) {
@@ -103,6 +103,7 @@ export default function GoldLoanApplicationRecord({ id, mode }) {
   if (mode === 'view') {
     return (
       <GoldLoanApplicationView
+        key={id}
         application={application}
         onBack={returnToDashboard}
         backLabel="Gold Loan Dashboard"
