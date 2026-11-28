@@ -736,11 +736,7 @@ export function createInitialRetailLoanForm(application) {
       interestMoratorium: '',
     });
   }
-  mergedForm.bulletPayment = mergedForm.emiApplicable === 'Yes'
-    ? ''
-    : ['Yes', 'No'].includes(String(mergedForm.bulletPayment))
-      ? String(mergedForm.bulletPayment)
-      : Number(mergedForm.bulletPayment) > 0 ? 'Yes' : 'No';
+  mergedForm.bulletPayment = mergedForm.emiApplicable === 'Yes' ? '' : 'Yes';
   mergedForm.totalInterestRate = calculateTotalInterestRate(mergedForm.interestRate, mergedForm.offsetRate);
   mergedForm.expiryDate = /^\d+$/.test(String(mergedForm.tenureMonths ?? ''))
     && Number(mergedForm.tenureMonths) > 0
@@ -1276,6 +1272,7 @@ export default function RetailLoanApplicationForm({
           moratoriumEndDate: '',
           principalMoratorium: '',
           interestMoratorium: '',
+          bulletPayment: 'Yes',
         });
         [
           'emiFixDate',
@@ -1290,6 +1287,7 @@ export default function RetailLoanApplicationForm({
           'moratoriumEndDate',
           'principalMoratorium',
           'interestMoratorium',
+          'bulletPayment',
         ]
           .forEach((field) => changedFields.add(field));
       } else {
@@ -1594,8 +1592,8 @@ export default function RetailLoanApplicationForm({
       }
       if (values.emiApplicable === 'No') {
         putError('expiryDate', validateDate(values.expiryDate, 'Expiry date', true));
-        if (!['Yes', 'No'].includes(values.bulletPayment)) {
-          next.bulletPayment = 'Select Yes or No for Bullet Payment.';
+        if (values.bulletPayment !== 'Yes') {
+          next.bulletPayment = 'Bullet Payment must be Yes.';
         }
       } else if (values.emiApplicable === 'Yes') {
         if (!['5', '10', 'Current Date'].includes(String(values.emiFixDate))) {
@@ -2152,7 +2150,7 @@ export default function RetailLoanApplicationForm({
                   <div className="retail-grid four-column">
                     {form.emiApplicable === 'No' ? (
                       <>
-                        {input('Bullet Payment', 'bulletPayment', { options: ['Yes', 'No'], required: true })}
+                        {input('Bullet Payment', 'bulletPayment', { required: true, readOnly: true })}
                         {input('Expiry Date', 'expiryDate', {
                           className: 'retail-readonly-date',
                           type: 'text',

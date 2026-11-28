@@ -3,8 +3,14 @@
 import { useEffect, useState } from 'react';
 import { Eye, LoaderCircle, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react';
 import AppShell from '../../components/AppShell';
-import { saveInterestRateMaster } from '../../services/interestRateMaster';
-import { getLoanProducts } from '../../services/loanProducts';
+import {
+  createInterestRateMaster,
+  deleteInterestRateMaster,
+  getInterestRateMasters,
+  getInterestRateMaster,
+  getInterestRateProducts,
+  updateInterestRateMaster,
+} from '../../services/interestratemaster';
 
 const getToday = () => {
   const date = new Date();
@@ -13,35 +19,12 @@ const getToday = () => {
 };
 const emptyBand = (id) => ({ id, upToAmount: '', upToMonths: '', normalInterest: '', penalRate: '', adhocRate: '' });
 const initialForm = () => ({ productCode: '', productName: '', effectiveDate: getToday(), bands: [emptyBand(1)] });
-const STORAGE_KEY = 'los_interest_rate_master_records';
-const sampleProductRows = [
-  { code: 'DEMO-PL01', name: 'Sample Personal Loan', effectiveDates: ['2026-12-01', '2027-01-01'] },
-  { code: 'DEMO-BL02', name: 'Sample Business Loan', effectiveDates: ['2027-01-15'] }
-];
 
 function formatUpperAmount(amount) {
   if (amount === undefined || amount === null || amount === '') return '—';
   return `₹${Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
-function readMasters() {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistMasters(masters) {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(masters));
-  } catch {
-    return false;
-  }
-  return true;
-}
 
 function validate(form, products) {
   const errors = {};
@@ -96,21 +79,40 @@ export default function InterestRateMasterPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [masters, setMasters] = useState([]);
+  const [loadingMasters, setLoadingMasters] = useState(true);
   const [dialog, setDialog] = useState(null);
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(true);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [productSearch, setProductSearch] = useState('');
 
-  useEffect(() => setMasters(readMasters()), []);
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadMasters() {
+      setLoadingMasters(true);
+      try {
+        const rows = await getInterestRateMasters({ page: 0, size: 100, signal: controller.signal });
+        if (!controller.signal.aborted) setMasters(rows);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setMessage({ type: 'error', text: error.message || 'Unable to load interest rate masters.' });
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoadingMasters(false);
+      }
+    }
+
+    loadMasters();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function loadProducts() {
       try {
-        const authData = JSON.parse(window.localStorage.getItem('authData') || '{}');
-        const rows = await getLoanProducts(controller.signal, authData.accessToken);
+        const rows = await getInterestRateProducts(controller.signal);
         if (!controller.signal.aborted) {
           setProducts(rows.filter((product) => product.code && product.name));
         }
@@ -127,10 +129,13 @@ export default function InterestRateMasterPage() {
     return () => controller.abort();
   }, []);
 
-  function storeMasters(nextMasters) {
-    setMasters(nextMasters);
-    return persistMasters(nextMasters);
-  }
+  useEffect(() => {
+    if (!products.length) return;
+    setMasters((current) => current.map((master) => {
+      const product = products.find((item) => item.code.toLowerCase() === master.productCode.toLowerCase());
+      return product ? { ...master, productName: master.productName || product.name } : master;
+    }));
+  }, [products]);
 
   function openCreate() {
     setForm(initialForm());
@@ -171,10 +176,6 @@ export default function InterestRateMasterPage() {
   const filteredProducts = productSearchRows.filter((product) => (
     `${product.code} ${product.name} ${product.effectiveDates.join(' ')}`.toLowerCase().includes(productSearch.trim().toLowerCase())
   ));
-  const filteredSampleProducts = sampleProductRows.filter((product) => (
-    `${product.code} ${product.name} ${product.effectiveDates.join(' ')}`.toLowerCase().includes(productSearch.trim().toLowerCase())
-  ));
-
   function updateBand(id, field, value) {
     setForm((current) => ({ ...current, bands: current.bands.map((band) => band.id === id ? { ...band, [field]: value } : band) }));
     setErrors((current) => ({ ...current, [`band-${id}-${field}`]: '', bands: '' }));
@@ -214,27 +215,38 @@ export default function InterestRateMasterPage() {
     setSaving(true);
     try {
       const payload = {
-        product_code: master.productCode, product_name: master.productName, effective_date: master.effectiveDate,
+        productCode: master.productCode,
+        effectiveDate: master.effectiveDate,
         tiers: master.bands.map((band) => ({
-          up_to_amount: Number(band.upToAmount), up_to_months: Number(band.upToMonths), normal_interest_rate: Number(band.normalInterest),
-          penal_rate: band.penalRate === '' ? null : Number(band.penalRate), adhoc_rate: band.adhocRate === '' ? null : Number(band.adhocRate)
-        })).sort((left, right) => left.up_to_amount - right.up_to_amount || left.up_to_months - right.up_to_months)
+          upToAmount: Number(band.upToAmount),
+          upToMonths: Number(band.upToMonths),
+          normalRate: Number(band.normalInterest),
+          penalRate: band.penalRate === '' || band.penalRate == null ? null : Number(band.penalRate),
+          adhocRate: band.adhocRate === '' || band.adhocRate == null ? null : Number(band.adhocRate)
+        }))
       };
-      const result = existingMaster ? null : await saveInterestRateMaster(payload);
+      payload.tiers.sort((left, right) => left.upToAmount - right.upToAmount || left.upToMonths - right.upToMonths);
+      const result = existingMaster
+        ? await updateInterestRateMaster(existingMaster.id, payload)
+        : await createInterestRateMaster(payload);
+      const savedMaster = {
+        ...master,
+        ...result.data,
+        productCode: result.data?.productCode || master.productCode,
+        productName: master.productName,
+        effectiveDate: result.data?.effectiveDate || master.effectiveDate,
+        bands: result.data?.bands?.length ? result.data.bands : master.bands,
+      };
       const nextMasters = existingMaster
-        ? masters.map((record) => record.id === existingMaster.id ? master : record)
-        : [master, ...masters];
-      const stored = storeMasters(nextMasters);
+        ? masters.map((record) => record.id === existingMaster.id ? savedMaster : record)
+        : [savedMaster, ...masters];
+      setMasters(nextMasters);
       setDialog(null);
       setMessage({
-        type: stored && (!result || result.configured) ? 'success' : 'info',
-        text: !stored
-          ? 'Changes are available for this session but could not be saved to browser storage.'
-          : existingMaster
-            ? 'Interest rate master updated in the list.'
-            : result.configured
-              ? result.result?.message || 'Interest rate master saved successfully.'
-              : 'Interest rate master saved in this browser. The API endpoint is not configured.'
+        type: 'success',
+        text: existingMaster
+          ? 'Interest rate master updated successfully.'
+          : result.result?.message || 'Interest rate master saved successfully.'
       });
     } catch (error) {
       setMessage({ type: 'error', text: error.message || 'Unable to save interest rates.' });
@@ -250,25 +262,52 @@ export default function InterestRateMasterPage() {
     setDialog(null);
   }
 
-  function openEdit(master) {
-    setForm({
-      productCode: master.productCode,
-      productName: master.productName,
-      effectiveDate: master.effectiveDate,
-      bands: master.bands.map((band) => ({ ...band }))
-    });
-    setErrors({});
-    setMessage(null);
-    setDialog({ type: 'form', master });
+  async function openEdit(master) {
+    setSaving(true);
+    try {
+      const details = await getInterestRateMaster(master.id);
+      const selected = details || master;
+      setForm({
+        productCode: selected.productCode,
+        productName: selected.productName || master.productName,
+        effectiveDate: selected.effectiveDate,
+        bands: selected.bands.map((band) => ({ ...band }))
+      });
+      setErrors({});
+      setMessage(null);
+      setDialog({ type: 'form', master: selected });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Unable to load the interest rate master.' });
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function deleteMaster(master) {
-    const stored = storeMasters(masters.filter((record) => record.id !== master.id));
-    setDialog(null);
-    setMessage({
-      type: stored ? 'success' : 'info',
-      text: stored ? 'Interest rate master deleted from the list.' : 'The record was removed for this session but could not be saved to browser storage.'
-    });
+  async function openView(master) {
+    setSaving(true);
+    try {
+      const details = await getInterestRateMaster(master.id);
+      setDialog({ type: 'view', master: details || master });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Unable to load the interest rate master.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteMaster(master) {
+    setSaving(true);
+    try {
+      await deleteInterestRateMaster(master.id);
+      setMasters((current) => current.filter((record) => record.id !== master.id));
+      setDialog(null);
+      setMessage({ type: 'success', text: 'Interest rate master deleted successfully.' });
+    } catch (error) {
+      setDialog(null);
+      setMessage({ type: 'error', text: error.message || 'Unable to delete the interest rate master.' });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -332,7 +371,7 @@ export default function InterestRateMasterPage() {
         </div>
         {message && !dialog && <div className={`irm-message ${message.type}`} role={message.type === 'error' ? 'alert' : 'status'}>{message.text}</div>}
         <section className="irm-directory" aria-labelledby="irm-directory-title">
-          <div className="irm-directory-head"><h2 id="irm-directory-title">Interest rate masters</h2><span className="irm-count">{masters.length} {masters.length === 1 ? 'master' : 'masters'}</span></div>
+          <div className="irm-directory-head"><h2 id="irm-directory-title">Interest rate masters</h2><span className="irm-count">{loadingMasters ? 'Loading...' : `${masters.length} ${masters.length === 1 ? 'master' : 'masters'}`}</span></div>
           <div className="irm-list-wrap">
             <table className="irm-list">
               <thead><tr><th scope="col">Product code</th><th scope="col">Product name</th><th scope="col">Effective date</th><th scope="col">Up to amount</th><th scope="col">Up to months</th><th scope="col">Normal interest</th><th scope="col">Penal rate</th><th scope="col">Adhoc rate</th><th scope="col">Actions</th></tr></thead>
@@ -348,13 +387,13 @@ export default function InterestRateMasterPage() {
                     <td>{master.bands.map((band) => band.penalRate !== '' && band.penalRate != null ? `${band.penalRate}%` : '—').join(' · ')}</td>
                     <td>{master.bands.map((band) => band.adhocRate !== '' && band.adhocRate != null ? `${band.adhocRate}%` : '—').join(' · ')}</td>
                     <td><div className="irm-actions">
-                      <button className="irm-icon" type="button" onClick={() => setDialog({ type: 'view', master })} aria-label={`View ${master.productName}`} title="View"><Eye size={16} /></button>
-                      <button className="irm-icon" type="button" onClick={() => openEdit(master)} aria-label={`Edit ${master.productName}`} title="Edit"><Pencil size={16} /></button>
-                      <button className="irm-icon danger" type="button" onClick={() => setDialog({ type: 'delete', master })} aria-label={`Delete ${master.productName}`} title="Delete"><Trash2 size={16} /></button>
+                      <button className="irm-icon" type="button" onClick={() => openView(master)} aria-label={`View ${master.productName}`} title="View" disabled={saving}><Eye size={16} /></button>
+                      <button className="irm-icon" type="button" onClick={() => openEdit(master)} aria-label={`Edit ${master.productName}`} title="Edit" disabled={saving}><Pencil size={16} /></button>
+                      <button className="irm-icon danger" type="button" onClick={() => setDialog({ type: 'delete', master })} aria-label={`Delete ${master.productName}`} title="Delete" disabled={saving}><Trash2 size={16} /></button>
                     </div></td>
                   </tr>
                 ))}
-                {masters.length === 0 && <tr><td className="irm-empty" colSpan="9"><strong>No interest rate masters yet</strong><span>Create a master to manage product rates and tenure tiers.</span></td></tr>}
+                {!loadingMasters && masters.length === 0 && <tr><td className="irm-empty" colSpan="9"><strong>No interest rate masters yet</strong><span>Create a master to manage product rates and tenure tiers.</span></td></tr>}
               </tbody>
             </table>
           </div>
@@ -459,16 +498,8 @@ export default function InterestRateMasterPage() {
                     {!productsLoading && filteredProducts.length === 0 && (
                       products.length
                         ? <tr><td className="irm-picker-empty" colSpan="4">No products match your search.</td></tr>
-                        : filteredSampleProducts.map((product) => (
-                          <tr className="irm-picker-samples" key={product.code}>
-                            <td>{product.code}</td>
-                            <td>{product.name}</td>
-                            <td>{product.effectiveDates.join(' · ')}</td>
-                            <td><button className="irm-picker-select" type="button" disabled title="Sample records cannot be selected">Sample</button></td>
-                          </tr>
-                        ))
+                        : <tr><td className="irm-picker-empty" colSpan="4">No products are available in the backend catalog.</td></tr>
                     )}
-                    {!productsLoading && products.length === 0 && <tr><td className="irm-picker-empty" colSpan="4">{filteredSampleProducts.length ? 'Sample preview only — connect the product catalog to select a real product.' : 'No products match your search.'}</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -480,7 +511,7 @@ export default function InterestRateMasterPage() {
         <div className="irm-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null); }}>
           <section className="irm-dialog narrow" role="dialog" aria-modal="true" aria-labelledby="irm-delete-title">
             <header className="irm-dialog-head"><div><h2 id="irm-delete-title">Delete interest rate master?</h2><p>{dialog.master.productCode} · {dialog.master.productName}</p></div><button className="irm-close" type="button" onClick={() => setDialog(null)} aria-label="Close delete confirmation"><X size={18} /></button></header>
-            <div className="irm-tier-view"><p style={{ margin: 0 }}>This removes the master from the saved list in this browser.</p></div>
+            <div className="irm-tier-view"><p style={{ margin: 0 }}>This permanently deletes the interest rate master from the backend.</p></div>
             <footer className="irm-dialog-footer"><button className="ir-btn" type="button" onClick={() => setDialog(null)}>Cancel</button><button className="ir-btn ir-submit" type="button" onClick={() => deleteMaster(dialog.master)}>Delete</button></footer>
           </section>
         </div>

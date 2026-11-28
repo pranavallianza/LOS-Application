@@ -1,25 +1,66 @@
+import axios from "axios";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/+$/, "");
+
+function getBankCode() {
+  const envBankCode = process.env.NEXT_PUBLIC_BANK_CODE?.trim();
+  if (envBankCode) return envBankCode;
+
+  if (typeof window !== "undefined") {
+    try {
+      const authData = JSON.parse(window.localStorage.getItem("authData") || "{}");
+      const bankCode =
+        authData?.bankCode ||
+        authData?.bank_code ||
+        authData?.user?.bankCode ||
+        authData?.user?.bank_code;
+      if (typeof bankCode === "string" && bankCode.trim()) return bankCode.trim();
+    } catch {
+      // Ignore invalid session data.
+    }
+  }
+
+  return "";
+}
+
 const getProductRows = (result) => [
   result?.data,
   result?.data?.items,
   result?.data?.products,
   result?.data?.records,
+  result?.data?.content,
   result?.items,
   result?.products,
   result?.records,
+  result?.content,
 ].find(Array.isArray);
 
-export async function getLoanProducts(signal, accessToken) {
-  const response = await fetch('/api/loan-products', {
-    method: 'GET',
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-    signal,
-  });
+export async function getLoanProducts(signal) {
+  if (!API_BASE_URL) throw new Error("NEXT_PUBLIC_API_URL is not configured.");
 
-  const result = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(result?.message || 'Unable to load loan products from the backend.');
+  const headers = { Accept: "application/json" };
+  const bankCode = getBankCode();
+  if (bankCode) headers["X-Bank-Code"] = bankCode;
+
+  let response;
+  try {
+    response = await axios.get(`${API_BASE_URL}/api/loan-products`, {
+      headers,
+      signal,
+      params: { page: 0, size: 10 },
+    });
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const message =
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        (error.response ? "Unable to load loan products from the backend." : "Unable to reach the loan product service.");
+      throw new Error(message);
+    }
+    throw error;
   }
 
+  const result = response.data;
   const rows = getProductRows(result);
   if (!rows) throw new Error('The backend returned an unsupported loan product response.');
 

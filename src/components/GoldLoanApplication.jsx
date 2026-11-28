@@ -21,6 +21,13 @@ const getCurrentDateString = () => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
+function calculateDaysPastDue(lastTransactionDate, todayDate) {
+  if (!isValidDate(lastTransactionDate) || !isValidDate(todayDate)) return '';
+  const lastTransactionTime = new Date(`${lastTransactionDate}T00:00:00Z`).getTime();
+  const todayTime = new Date(`${todayDate}T00:00:00Z`).getTime();
+  return Math.max(0, Math.floor((todayTime - lastTransactionTime) / 86400000));
+}
+
 const GOLD_ACCOUNT_STATUSES = ['Operative', 'Inoperative'];
 
 function normalizeGoldAccountStatus(value) {
@@ -223,6 +230,7 @@ export function createApplicationForm(application) {
   mergedForm.expiryDate = calculateGoldLoanExpiryDate(mergedForm);
   mergedForm.repaymentStartDate = calculateGoldLoanRepaymentStartDate(mergedForm);
   mergedForm.instalmentAmount = calculateGoldLoanInstalmentAmount(mergedForm);
+  mergedForm.dpd = calculateDaysPastDue(mergedForm.lastTransactionDate, getCurrentDateString());
 
   return mergedForm;
 }
@@ -394,6 +402,7 @@ const createInitialForm = () => ({
   schemeDescription: '',
   modeOfOperation: '',
   lastTransactionDate: '',
+  dpd: '',
   relatedParties: Array.from({ length: 1 }, (_, index) => ({
     id: `party-${index + 1}`,
     nameType: '',
@@ -708,6 +717,10 @@ function validateStep(stepIndex, values) {
       && isValidDate(values.lastTransactionDate) && values.lastTransactionDate < values.effectiveDate) {
       errors.lastTransactionDate = 'Last transaction date cannot precede the effective date.';
     }
+    if (values.lastTransactionDate && isValidDate(values.lastTransactionDate)
+      && values.lastTransactionDate > getCurrentDateString()) {
+      errors.lastTransactionDate = 'Last transaction date cannot be after today.';
+    }
     if (!GOLD_ACCOUNT_STATUSES.includes(values.accountStatus)) {
       errors.accountStatus = 'Select a valid account status.';
     }
@@ -1003,6 +1016,8 @@ function LoanField({
           label={label}
           value={value}
           onChange={handleValueChange}
+          min={min}
+          max={max}
           required={required}
           disabled={readOnly}
           invalid={Boolean(displayedError)}
@@ -1068,6 +1083,7 @@ const goldLoanDetailLabels = {
   effectiveDate: 'Effective Date',
   accountStatus: 'Account Status',
   lastTransactionDate: 'Last Transaction Date',
+  dpd: 'DPD (Days Past Due)',
   customerId: 'Customer ID',
   title: 'Title',
   firstName: 'First Name',
@@ -1204,11 +1220,13 @@ export function GoldLoanApplicationView({
     effectiveDate: form.effectiveDate,
     accountStatus: form.accountStatus,
     lastTransactionDate: form.lastTransactionDate,
+    dpd: calculateDaysPastDue(form.lastTransactionDate, getCurrentDateString()),
   }, [
     ['loanAccountNumber'],
     ['effectiveDate'],
     ['accountStatus'],
     ['lastTransactionDate'],
+    ['dpd'],
   ]);
   const overviewDetails = [
     { label: 'Application ID', value: applicationId },
@@ -1880,6 +1898,11 @@ export function LoanApplicationFormPage({
     const nextForm = { ...form, [field]: value };
     const fieldKeys = [field];
 
+    if (field === 'lastTransactionDate') {
+      nextForm.dpd = calculateDaysPastDue(value, getCurrentDateString());
+      fieldKeys.push('dpd');
+    }
+
     if (field === 'tenureMonths') {
       nextForm.charges = { ...form.charges, tenureMonths: value };
       if (String(form.instalments ?? '').trim() || validationErrors.instalments) {
@@ -2539,6 +2562,14 @@ export function LoanApplicationFormPage({
                       value={form.lastTransactionDate}
                       onChange={(value) => updateField('lastTransactionDate', value)}
                       error={validationErrors.lastTransactionDate}
+                      min={form.effectiveDate}
+                      max={getCurrentDateString()}
+                    />
+                    <LoanField
+                      id="dpd"
+                      label="DPD (Days Past Due)"
+                      value={calculateDaysPastDue(form.lastTransactionDate, getCurrentDateString())}
+                      readOnly
                     />
                   </div>
                   <datalist id="loan-product-options">
